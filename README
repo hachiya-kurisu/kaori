@@ -1,0 +1,12 @@
+= tsubomi
+
+personal gemini server
+no tls support, do some socat/stunnel
+
+= build and install
+
+$ make
+$ make install
+
+$ socat openssl-listen:1965,reuseaddr,fork,cert=/etc/ssl/tako.jp.crt,key=/etc/ssl/private/tako.jp.key,verify=0 exec:./tsubomi
+
