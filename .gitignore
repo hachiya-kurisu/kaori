@@ -1,4 +1,5 @@
 tsubomi
+tsubomi-test
 tsubomi.o
 libtsubomi.a
 config.h

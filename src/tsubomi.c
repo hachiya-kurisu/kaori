@@ -9,8 +9,10 @@
 #include <unistd.h>
 #include <limits.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 
 #include <magic.h>
+#include <tls.h>
 
 #include "tsubomi.h"
 
@@ -47,8 +49,9 @@ int decode(char *src, char *dst) {
 }
 
 int header(int status, char *meta) {
-  printf("%d %s\r\n", status, meta ? meta : "");
-  fflush(stdout);
+  char buffer[1026];
+  int len = snprintf(buffer, 1026, "%d %s\r\n", status, meta ? meta : "");
+  config.tls ? tls_write(config.tls, buffer, len) : write(1, buffer, len);
   return 1;
 }
 
@@ -62,7 +65,7 @@ int servefile(char *path) {
   char buffer[BUFSIZ];
   ssize_t l;
   while((l = read(fd, buffer, BUFSIZ)) > 0)
-    write(1, buffer, (size_t) l);
+    config.tls ? tls_write(config.tls, buffer, l) : write(1, buffer, l);
   close(fd);
   fflush(stdout);
   return 0;
@@ -70,15 +73,18 @@ int servefile(char *path) {
 
 int list(char *current) {
   struct stat fs = { 0 };
-  stat(server.index, &fs);
+  stat(config.index, &fs);
 
   if(S_ISREG(fs.st_mode))
-    return servefile(server.index);
+    return servefile(config.index);
 
   header(20, "text/gemini");
   glob_t res;
   if(glob("*", GLOB_MARK, 0, &res)) {
-    printf("🤷‍♀️\r\n");
+    char *str = "(*^o^*)\r\n";
+    int len = strlen(str);
+    config.tls ? tls_write(config.tls, str, len) : write(1, str, len);
+
     return 0;
   }
   char *path;
@@ -87,19 +93,43 @@ int list(char *current) {
     int len = strlen(path);
     if(path[len - 1] == '~') continue;
     if(strstr(path, ".gem") == &path[len - 4]) len -= 4;
-    printf("=> %s/%.*s %.*s\r\n", current, len, path, len, path);
+
+    char buffer[LINE_MAX];
+    int l = snprintf(buffer, LINE_MAX, "=> %s/%.*s %.*s\r\n",
+        current, len, path, len, path);
+    config.tls ? tls_write(config.tls, buffer, l) : write(1, buffer, l);
 
   }
   return 0;
 }
 
 int cgi(char *path, char *data, char *query) {
-  setenv("GEMIN_PATH", path ? path : "", 1);
+  setenv("GEMINI_PATH", path ? path : "", 1);
   setenv("GEMINI_DATA", data ? data : "", 1);
   setenv("GEMINI_QUERY", query ? query : "", 1);
-  char *argv[] = { path, data, query };
-  execv(path, argv);
-  exit(1);
+
+  int fd[2];
+  pipe(fd);
+
+  pid_t pid = fork();
+  if(!pid) {
+    dup2(fd[1], 1);
+    close(fd[0]);
+    char *argv[] = { path, data, query };
+    execv(path, argv);
+  }
+  close(fd[1]);
+
+  char buffer[BUFSIZ] = { 0 };
+  ssize_t l;
+  while((l = read(fd[0], buffer, BUFSIZ)) > 0) {
+    config.tls ? tls_write(config.tls, buffer, l) : write(1, buffer, l);
+  }
+
+  int status;
+  waitpid(pid, &status, 0);
+
+  exit(0);
 }
 
 int serve(char *current, char *remaining, char *query) {
@@ -136,14 +166,12 @@ void init() {
   magic_setflags(magic, MAGIC_MIME_TYPE);
 }
 
-int tsubomi() {
-  char raw[1026] = { 0 };
+int tsubomi(char *raw) {
   char url[1026] = { 0 };
   char path[1026] = { 0 };
   char query[1026] = { 0 };
 
   char *domain = 0, *port = 0, *rawpath = 0, *rawquery = 0;
-  if(!fgets(raw, 1026, stdin)) return header(59, "invalid url");
 
   for(int i = (int) strlen(raw); i >= 0; i--)
     if(raw[i] == '\n' || raw[i] == '\r') raw[i] = '\0';
@@ -157,10 +185,12 @@ int tsubomi() {
   if(domain && (port = strchr(domain, ':'))) *port++ = '\0';
 
   char *peer = getenv("TSUBOMI_PEERADDR");
-  if(server.log) {
-    FILE *fp = fopen(server.log, "a");
-    fprintf(fp, "%s:%s\n", peer, raw);
-    fclose(fp);
+  if(config.log) {
+    FILE *fp = fopen(config.log, "a");
+    if(fp) {
+      fprintf(fp, "%s:%s\n", peer, raw);
+      fclose(fp);
+    }
   }
   fprintf(stderr, "%s:%s\n", peer, raw);
 
