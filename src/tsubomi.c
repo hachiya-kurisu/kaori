@@ -126,8 +126,8 @@ int cgi(char *path, char *data, char *query) {
     config.tls ? tls_write(config.tls, buffer, l) : write(1, buffer, l);
   }
 
-  int status;
-  waitpid(pid, &status, 0);
+  // int status;
+  // waitpid(pid, &status, 0);
 
   exit(0);
 }
