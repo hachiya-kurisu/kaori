@@ -47,7 +47,6 @@ int main(int argc, char **argv) {
     }
   }
 
-
   init();
 
   struct sockaddr_in6 addr;
@@ -72,6 +71,9 @@ int main(int argc, char **argv) {
   unsigned int protocols = 0;
   if(tls_config_parse_protocols(&protocols, "secure") < 0) exit(1);
   tls_config_set_protocols(tlsconf, protocols);
+
+  tls_config_verify_client_optional(tlsconf);
+  tls_config_insecure_noverifycert(tlsconf);
 
   if(tls_config_set_ciphers(tlsconf, ciphers) < 0) exit(1);
 
@@ -110,8 +112,14 @@ int main(int argc, char **argv) {
       int n = tls_read(tls2, raw, 1026);
       if(n == -1) printf("%s\n", tls_error(tls2));
 
+      int provided = tls_peer_cert_provided(tls2);
+      if(provided == 1) {
+        setenv("TSUBOMI_CLIENT", tls_peer_cert_hash(tls2), 1);
+      }
+
       char ip[INET6_ADDRSTRLEN];
       inet_ntop(AF_INET6, &addr, ip, INET6_ADDRSTRLEN);
+
       setenv("TSUBOMI_PEERADDR", ip, 1);
 
       config.tls = tls2;
