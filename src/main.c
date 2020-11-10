@@ -16,6 +16,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <poll.h>
+#include <sys/wait.h>
 
 #include <tls.h>
 #include <magic.h>
@@ -77,8 +78,10 @@ int main(int argc, char **argv) {
 
   if(tls_config_set_ciphers(tlsconf, ciphers) < 0) exit(1);
 
-  if(tls_config_set_key_file(tlsconf, "/etc/ssl/private/blekksprut.net.key") < 0) exit(1);
-  if(tls_config_set_cert_file(tlsconf, "/etc/ssl/blekksprut.net.crt") < 0) exit(1);
+  // if(tls_config_set_key_file(tlsconf, "/etc/ssl/private/blekksprut.net.key") < 0) exit(1);
+  // if(tls_config_set_cert_file(tlsconf, "/etc/ssl/blekksprut.net.crt") < 0) exit(1);
+  if(tls_config_set_key_file(tlsconf, "/var/gemini/gemini.key") < 0) exit(1);
+  if(tls_config_set_cert_file(tlsconf, "/var/gemini/gemini.pem") < 0) exit(1);
 
   if(tls_configure(tls, tlsconf) < 0) exit(1);
 
@@ -126,6 +129,8 @@ int main(int argc, char **argv) {
       tsubomi(raw);
 
       close(server);
+    } else {
+      wait(0);
     }
     close(client);
   }
