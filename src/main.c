@@ -78,10 +78,8 @@ int main(int argc, char **argv) {
 
   if(tls_config_set_ciphers(tlsconf, ciphers) < 0) exit(1);
 
-  // if(tls_config_set_key_file(tlsconf, "/etc/ssl/private/blekksprut.net.key") < 0) exit(1);
-  // if(tls_config_set_cert_file(tlsconf, "/etc/ssl/blekksprut.net.crt") < 0) exit(1);
   if(tls_config_set_key_file(tlsconf, "/var/gemini/gemini.key") < 0) exit(1);
-  if(tls_config_set_cert_file(tlsconf, "/var/gemini/gemini.pem") < 0) exit(1);
+  if(tls_config_set_cert_file(tlsconf, "/var/gemini/gemini.crt") < 0) exit(1);
 
   if(tls_configure(tls, tlsconf) < 0) exit(1);
 
