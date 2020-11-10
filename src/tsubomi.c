@@ -18,6 +18,21 @@
 
 static magic_t magic;
 
+void encode(unsigned char *s, char *enc) {
+  char skip[256] = { 0 };
+  unsigned int i;
+  for(i = 0; i < 256; i++)
+    skip[i] = isalnum(i) || i == '~'||i == '-'||i == '.'||i == '_' ? i : 0;
+
+  for(; *s; s++) {
+    if(skip[(int) *s]) sprintf(enc, "%c", skip[(int) *s]), ++enc;
+    else {
+      sprintf(enc, "%%%02x", *s);
+      while (*++enc);
+    }
+  }
+}
+
 int decode(char *src, char *dst) {
   int pos = 0;
   char buffer[3] = { 0 };
@@ -62,7 +77,7 @@ int servefile(char *path) {
   char *mime = (char *) magic_file(magic, path);
   header(20, !strcmp(mime, "text/plain") ? "text/gemini" : mime);
 
-  char buffer[BUFSIZ];
+  char buffer[BUFSIZ] = { 0 };
   ssize_t l;
   while((l = read(fd, buffer, BUFSIZ)) > 0)
     config.tls ? tls_write(config.tls, buffer, l) : write(1, buffer, l);
@@ -90,15 +105,22 @@ int list(char *current) {
   char *path;
   for(size_t i = 0; i < res.gl_pathc; i++) {
     path = res.gl_pathv[i];
-    int len = strlen(path);
-    if(path[len - 1] == '~') continue;
-    if(strstr(path, ".gem") == &path[len - 4]) len -= 4;
 
-    char buffer[LINE_MAX];
-    int l = snprintf(buffer, LINE_MAX, "=> %s/%.*s %.*s\r\n",
-        current, len, path, len, path);
+    char ecurrent[(strlen(current) * 3 + 1)];
+    encode((unsigned char *) current, ecurrent);
+
+    char epath[(strlen(path) * 3 + 1)];
+    encode((unsigned char *) path, epath);
+
+    int len = strlen(epath);
+    if(epath[len - 1] == '~') continue;
+    if(strstr(epath, ".gmi") == &epath[len - 4]) len -= 4;
+
+    char buffer[BUFSIZ] = { 0 };
+
+    int l = snprintf(buffer, BUFSIZ, "=> %s/%.*s %.*s\n",
+        ecurrent, len, epath, len, epath);
     config.tls ? tls_write(config.tls, buffer, l) : write(1, buffer, l);
-
   }
   return 0;
 }
@@ -153,7 +175,7 @@ int serve(char *current, char *remaining, char *query) {
   if(S_ISREG(fs.st_mode)) return servefile(p);
 
   char inferred[LINE_MAX];
-  sprintf(inferred, "%s.gem", p);
+  sprintf(inferred, "%s.gmi", p);
   memset(&fs, 0, sizeof(fs)); 
   stat(inferred, &fs);
   if(S_ISREG(fs.st_mode)) return servefile(inferred);
