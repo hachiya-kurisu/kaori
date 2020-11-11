@@ -27,6 +27,22 @@ static void version() {
   printf("%s %s\n", NAME, VERSION);
 }
 
+char *certattr(const char *subject, char *key) {
+  char needle[LINE_MAX] = { 0 };
+  sprintf(needle, "/%s=", key);
+
+  char *found = strstr(subject, needle);
+  char *end;
+  if(found) {
+    found += strlen(needle);
+    end = strchr(found, '/');
+    char *result;
+    asprintf(&result, "%.*s", (int) (end - found), found);
+    return result;
+  }
+  return 0;
+}
+
 static void usage() {
   printf("%s\t[-hvatpr]\n", NAME);
   printf("\t-h usage\n");
@@ -95,7 +111,13 @@ int main(int argc, char **argv) {
   addr.sin6_port = htons(1965);
   addr.sin6_addr = in6addr_any;
 
+  struct timeval timeout;
+  timeout.tv_sec = 10;
+  timeout.tv_usec = 0;
+
   setsockopt(server, SOL_SOCKET, SO_REUSEADDR, &opt, 4);
+  setsockopt(server, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+  setsockopt(server, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
 
   b = bind(server, (struct sockaddr *) &addr, (socklen_t) sizeof(addr));
   if(b < 0) exit(1);
@@ -107,6 +129,7 @@ int main(int argc, char **argv) {
   while((client = accept(server, (struct sockaddr *) &addr, &socklen)) > -1) {
     pid_t pid = fork();
     if(!pid) {
+      close(server);
       if(tls_accept_socket(tls, &tls2, client) < 0) exit(1);
 
       char raw[1026] = { 0 };
@@ -116,6 +139,26 @@ int main(int argc, char **argv) {
       int provided = tls_peer_cert_provided(tls2);
       if(provided == 1) {
         setenv("TSUBOMI_CLIENT", tls_peer_cert_hash(tls2), 1);
+        const char *subject = tls_peer_cert_subject(tls2);
+        char *uid = certattr(subject, "UID");
+        char *email = certattr(subject, "emailAddress");
+        char *organization = certattr(subject, "O");
+
+        if(uid) setenv("TSUBOMI_UID", uid, 1);
+        if(email) setenv("TSUBOMI_EMAIL", email, 1);
+        if(organization) setenv("TSUBOMI_ORGANIZATION", organization, 1);
+
+        if(config.log) {
+          FILE *fp = fopen(config.log, "a");
+          if(fp) {
+            fprintf(fp, "%s\n", subject);
+            fprintf(fp, "UID: %s\n", uid);
+            fprintf(fp, "ORGANIZATION: %s\n", organization);
+            fprintf(fp, "EMAIL: %s\n", email);
+            fclose(fp);
+          }
+        }
+ 
       }
 
       char ip[INET6_ADDRSTRLEN];
@@ -125,12 +168,10 @@ int main(int argc, char **argv) {
 
       config.tls = tls2;
       tsubomi(raw);
-
-      close(server);
     } else {
+      close(client);
       wait(0);
     }
-    close(client);
   }
 
   tls_close(tls);
