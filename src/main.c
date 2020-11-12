@@ -1,5 +1,7 @@
 // see us after school for copyright and license details
 
+#define _PR_HAVE_LARGE_OFF_T
+
 #include <pwd.h>
 #include <glob.h>
 #include <errno.h>
@@ -8,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+#include <signal.h>
 #include <unistd.h>
 #include <syslog.h>
 #include <sys/stat.h>
@@ -15,7 +18,6 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
-#include <poll.h>
 #include <sys/wait.h>
 
 #include <tls.h>
@@ -170,7 +172,8 @@ int main(int argc, char **argv) {
       tsubomi(raw);
     } else {
       close(client);
-      wait(0);
+      signal(SIGCHLD,SIG_IGN);
+      // wait(0);
     }
   }
 

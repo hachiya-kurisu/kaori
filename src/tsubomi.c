@@ -1,5 +1,7 @@
 // see us after school for copyright and license details
 
+#define _PR_HAVE_LARGE_OFF_T
+
 #include <glob.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -79,8 +81,15 @@ int servefile(char *path) {
 
   char buffer[BUFSIZ] = { 0 };
   ssize_t l;
-  while((l = read(fd, buffer, BUFSIZ)) > 0)
-    config.tls ? tls_write(config.tls, buffer, l) : write(1, buffer, l);
+  while((l = read(fd, buffer, BUFSIZ)) != 0) {
+    if(l > 0) {
+      if(config.tls) {
+        tls_write(config.tls, buffer, l);
+      } else {
+        write(1, buffer, l);
+      }
+    }
+  }
   close(fd);
   fflush(stdout);
   return 0;
@@ -116,9 +125,9 @@ int list(char *current) {
     if(epath[len - 1] == '~') continue;
     if(strstr(epath, ".gmi") == &epath[len - 4]) len -= 4;
 
-    char buffer[BUFSIZ] = { 0 };
+    char buffer[BUFSIZ * 32] = { 0 };
 
-    int l = snprintf(buffer, BUFSIZ, "=> %s/%.*s %.*s\n",
+    int l = snprintf(buffer, BUFSIZ * 32, "=> %s/%.*s %.*s\n",
         ecurrent, len, epath, len, epath);
     config.tls ? tls_write(config.tls, buffer, l) : write(1, buffer, l);
   }
@@ -142,9 +151,9 @@ int cgi(char *path, char *data, char *query) {
   }
   close(fd[1]);
 
-  char buffer[BUFSIZ] = { 0 };
+  char buffer[BUFSIZ * 32] = { 0 };
   ssize_t l;
-  while((l = read(fd[0], buffer, BUFSIZ)) > 0) {
+  while((l = read(fd[0], buffer, BUFSIZ * 32)) > 0) {
     config.tls ? tls_write(config.tls, buffer, l) : write(1, buffer, l);
   }
 
