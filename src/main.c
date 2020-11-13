@@ -103,7 +103,6 @@ int main(int argc, char **argv) {
 
   bzero(&addr, sizeof(addr));
 
-  // if(chroot(config.root)) return 1;
   if(pledge("stdio inet proc dns exec rpath wpath cpath getpw unix", 0))
     return 1;
   daemon(0, 0);

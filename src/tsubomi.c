@@ -226,6 +226,11 @@ int tsubomi(char *raw) {
   }
   fprintf(stderr, "%s:%s\n", peer, raw);
 
+  for(int i = 0; domains[i]; i++) {
+    if(strstr(domain, domains[i]) == domain) break;
+    return header(51, "not found");
+  }
+
   if(chdir(domain)) return header(51, "not found");
   decode(rawpath, path);
   decode(rawquery, query);

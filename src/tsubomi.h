@@ -7,6 +7,7 @@ typedef struct {
 } Tsubomi;
 
 extern Tsubomi config;
+extern char *domains[];
 
 extern void init(void);
 extern int tsubomi(char *);
