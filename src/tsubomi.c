@@ -235,6 +235,9 @@ int tsubomi(char *raw) {
   decode(rawpath, path);
   decode(rawquery, query);
 
+  if(strstr(path, "..")) return header(51, "not found");
+  if(strstr(path, "//")) return header(51, "not found");
+
   char current[2048] = "";
   return serve(current, path, query);
 }
