@@ -156,10 +156,7 @@ int cgi(char *path, char *data, char *query) {
   while((l = read(fd[0], buffer, BUFSIZ * 32)) > 0) {
     config.tls ? tls_write(config.tls, buffer, l) : write(1, buffer, l);
   }
-
   wait(0);
-  // int status;
-  // waitpid(pid, &status, 0);
 
   return 0;
 }
@@ -210,7 +207,9 @@ int tsubomi(char *raw) {
 
   sprintf(url, "%s", raw);
   domain = url;
+
   if(strstr(domain, "gemini://") == domain) domain += 9;
+  else if(strstr(domain, "gemini+stream://") == domain) domain += 16;
 
   if(domain && (rawpath = strchr(domain, '/'))) *rawpath++ = '\0';
   if(rawpath && (rawquery = strchr(rawpath, '?'))) *rawquery++ = '\0';
