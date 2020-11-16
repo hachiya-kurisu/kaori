@@ -151,13 +151,18 @@ int cgi(char *path, char *data, char *query) {
   }
   close(fd[1]);
 
-  char buffer[BUFSIZ * 32] = { 0 };
+  char buffer[BUFSIZ] = { 0 };
   ssize_t l;
-  while((l = read(fd[0], buffer, BUFSIZ * 32)) > 0) {
-    config.tls ? tls_write(config.tls, buffer, l) : write(1, buffer, l);
+  while((l = read(fd[0], buffer, BUFSIZ)) != 0) {
+    if(l > 0) {
+      if(config.tls) {
+        tls_write(config.tls, buffer, l);
+      } else {
+        write(1, buffer, l );
+      }
+    }
   }
   wait(0);
-
   return 0;
 }
 
