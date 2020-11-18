@@ -25,26 +25,24 @@ static void usage() {
   printf("%s\t[-hvatpr]\n", NAME);
   printf("\t-h usage\n");
   printf("\t-v version\n");
-  printf("\t-a hostname (%s)\n", config.host);
-  printf("\t-r root (%s)\n", config.root);
+  printf("\t-r root (%s)\n", root);
 }
 
 #include "../config.h"
 
 int main(int argc, char **argv) {
   int c;
-  while((c = getopt(argc, argv, "thvsa:p:r:w")) != -1) {
+  while((c = getopt(argc, argv, "hvr:")) != -1) {
     switch(c) {
       case 'h': usage(); exit(0);
       case 'v': version(); exit(0);
-      case 'a': config.host = optarg; break;
-      case 'r': config.root = optarg; break;
+      case 'r': root = optarg; break;
     }
   }
 
   init();
   setbuf(stdout, 0);
-  if(chdir(config.root)) return 1;
+  if(chdir(root)) return 1;
   char raw[1026] = { 0 };
   if(!fgets(raw, 1026, stdin)) return 1;
 

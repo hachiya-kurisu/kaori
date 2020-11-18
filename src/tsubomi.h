@@ -1,12 +1,9 @@
-typedef struct {
-  char *host, *root, *index;
-  char *notfound, *back;
-  char *log;
+void *tlsptr;
 
-  void *tls;
-} Tsubomi;
+extern char *root;
+extern char *indx;
+extern char *logp;
 
-extern Tsubomi config;
 extern char *domains[];
 
 extern void init(void);

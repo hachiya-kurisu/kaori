@@ -46,23 +46,21 @@ char *certattr(const char *subject, char *key) {
 }
 
 static void usage() {
-  printf("%s\t[-hvatpr]\n", NAME);
+  printf("%s\t[-hvr]\n", NAME);
   printf("\t-h usage\n");
   printf("\t-v version\n");
-  printf("\t-a hostname (%s)\n", config.host);
-  printf("\t-r root (%s)\n", config.root);
+  printf("\t-r root (%s)\n", root);
 }
 
 #include "../config.h"
 
 int main(int argc, char **argv) {
   int c;
-  while((c = getopt(argc, argv, "thvsa:p:r:w")) != -1) {
+  while((c = getopt(argc, argv, "hvr:")) != -1) {
     switch(c) {
       case 'h': usage(); exit(0);
       case 'v': version(); exit(0);
-      case 'a': config.host = optarg; break;
-      case 'r': config.root = optarg; break;
+      case 'r': root = optarg; break;
     }
   }
 
@@ -75,38 +73,49 @@ int main(int argc, char **argv) {
   struct tls *tls = 0;
   struct tls *tls2 = 0;
 
-  int opt = 1;
-  int b;
-
-	char *ciphers = "ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-SHA384:ECDHE-ECDSA-AES256-SHA384";
-
   if(tls_init() < 0) exit(1);
+
+  tls = tls_server();
+  if(!tls) exit(1);
+
   tlsconf = tls_config_new();
   if(!tlsconf) exit(1);
 
-  tls = tls_server();
-  if(!tlsconf) exit(1);
-
-  unsigned int protocols = 0;
-  if(tls_config_parse_protocols(&protocols, "secure") < 0) exit(1);
-  tls_config_set_protocols(tlsconf, protocols);
-
+  if(tls_config_set_session_lifetime(tlsconf, 7200) == -1) exit(1);
   tls_config_verify_client_optional(tlsconf);
   tls_config_insecure_noverifycert(tlsconf);
 
-  if(tls_config_set_ciphers(tlsconf, ciphers) < 0) exit(1);
+  // tls_config_set_protocols(tlsconf, TLS_PROTOCOLS_DEFAULT);
+  // if(tls_config_set_ciphers(tlsconf, "secure") < 0) exit(1);
+
+  // uint8_t *key, *crt;
+  // size_t keylen, crtlen;
+  // key = tls_load_file("/var/gemini/gemini.key", &keylen, 0);
+  // crt = tls_load_file("/var/gemini/gemini.crt", &crtlen, 0);
+  // tls_config_set_key_mem(tlsconf, key, keylen);
+  // tls_config_set_cert_mem(tlsconf, crt, crtlen);
 
   if(tls_config_set_key_file(tlsconf, "/var/gemini/gemini.key") < 0) exit(1);
   if(tls_config_set_cert_file(tlsconf, "/var/gemini/gemini.crt") < 0) exit(1);
 
-  if(tls_configure(tls, tlsconf) < 0) exit(1);
+  if(tls_configure(tls, tlsconf) < 0) {
+    printf("%s\n", tls_error(tls));
+    exit(1);
+  }
 
   bzero(&addr, sizeof(addr));
 
+  daemon(0, 0);
+
+  if(secure) {
+    if(chroot(root)) return 1;
+    if(chdir("/")) return 1;
+  } else {
+    if(chdir(root)) return 1;
+  }
+
   if(pledge("stdio inet proc dns exec rpath wpath cpath getpw unix", 0))
     return 1;
-  daemon(0, 0);
-  if(chdir(config.root)) return 1;
 
   addr.sin6_family = AF_INET6;
   addr.sin6_port = htons(1965);
@@ -116,12 +125,13 @@ int main(int argc, char **argv) {
   timeout.tv_sec = 10;
   timeout.tv_usec = 0;
 
+  int opt = 1;
   setsockopt(server, SOL_SOCKET, SO_REUSEADDR, &opt, 4);
   setsockopt(server, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
   setsockopt(server, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
 
-  b = bind(server, (struct sockaddr *) &addr, (socklen_t) sizeof(addr));
-  if(b < 0) exit(1);
+  int bound = bind(server, (struct sockaddr *) &addr, (socklen_t) sizeof(addr));
+  if(bound < 0) exit(1);
 
   listen(server, 10);
 
@@ -149,15 +159,13 @@ int main(int argc, char **argv) {
         if(email) setenv("TSUBOMI_EMAIL", email, 1);
         if(organization) setenv("TSUBOMI_ORGANIZATION", organization, 1);
 
-        if(config.log) {
-          FILE *fp = fopen(config.log, "a");
-          if(fp) {
-            fprintf(fp, "%s\n", subject);
-            fprintf(fp, "UID: %s\n", uid);
-            fprintf(fp, "ORGANIZATION: %s\n", organization);
-            fprintf(fp, "EMAIL: %s\n", email);
-            fclose(fp);
-          }
+        FILE *fp = fopen(logp, "a");
+        if(fp) {
+          fprintf(fp, "%s\n", subject);
+          fprintf(fp, "UID: %s\n", uid);
+          fprintf(fp, "ORGANIZATION: %s\n", organization);
+          fprintf(fp, "EMAIL: %s\n", email);
+          fclose(fp);
         }
  
       }
@@ -167,12 +175,12 @@ int main(int argc, char **argv) {
 
       setenv("TSUBOMI_PEERADDR", ip, 1);
 
-      config.tls = tls2;
+      tlsptr = tls2;
       tsubomi(raw);
+
     } else {
       close(client);
       signal(SIGCHLD,SIG_IGN);
-      // wait(0);
     }
   }
 

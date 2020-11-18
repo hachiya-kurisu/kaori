@@ -18,7 +18,13 @@
 
 #include "tsubomi.h"
 
-static magic_t magic;
+static magic_t cookie;
+
+void init() {
+  cookie = magic_open(MAGIC_NONE);
+  magic_load(cookie, 0);
+  magic_setflags(cookie, MAGIC_MIME_TYPE);
+}
 
 void encode(unsigned char *s, char *enc) {
   char skip[256] = { 0 };
@@ -68,7 +74,7 @@ int decode(char *src, char *dst) {
 int header(int status, char *meta) {
   char buffer[1026];
   int len = snprintf(buffer, 1026, "%d %s\r\n", status, meta ? meta : "");
-  config.tls ? tls_write(config.tls, buffer, len) : write(1, buffer, len);
+  tlsptr ? tls_write(tlsptr, buffer, len) : write(1, buffer, len);
   return 1;
 }
 
@@ -76,15 +82,15 @@ int servefile(char *path) {
   int fd = open(path, O_RDONLY);
   if(!fd) return header(51, "not found");
 
-  char *mime = (char *) magic_file(magic, path);
+  char *mime = (char *) magic_file(cookie, path);
   header(20, !strcmp(mime, "text/plain") ? "text/gemini" : mime);
 
   char buffer[BUFSIZ] = { 0 };
   ssize_t l;
   while((l = read(fd, buffer, BUFSIZ)) != 0) {
     if(l > 0) {
-      if(config.tls) {
-        tls_write(config.tls, buffer, l);
+      if(tlsptr) {
+        tls_write(tlsptr, buffer, l);
       } else {
         write(1, buffer, l);
       }
@@ -97,17 +103,17 @@ int servefile(char *path) {
 
 int list(char *current) {
   struct stat fs = { 0 };
-  stat(config.index, &fs);
+  stat(indx, &fs);
 
   if(S_ISREG(fs.st_mode))
-    return servefile(config.index);
+    return servefile(indx);
 
   header(20, "text/gemini");
   glob_t res;
   if(glob("*", GLOB_MARK, 0, &res)) {
     char *str = "(*^o^*)\r\n";
     int len = strlen(str);
-    config.tls ? tls_write(config.tls, str, len) : write(1, str, len);
+    tlsptr ? tls_write(tlsptr, str, len) : write(1, str, len);
 
     return 0;
   }
@@ -129,7 +135,7 @@ int list(char *current) {
 
     int l = snprintf(buffer, BUFSIZ * 32, "=> %s/%.*s %.*s\n",
         ecurrent, len, epath, len, epath);
-    config.tls ? tls_write(config.tls, buffer, l) : write(1, buffer, l);
+    tlsptr ? tls_write(tlsptr, buffer, l) : write(1, buffer, l);
   }
   return 0;
 }
@@ -155,8 +161,8 @@ int cgi(char *path, char *data, char *query) {
   ssize_t l;
   while((l = read(fd[0], buffer, BUFSIZ)) != 0) {
     if(l > 0) {
-      if(config.tls) {
-        tls_write(config.tls, buffer, l);
+      if(tlsptr) {
+        tls_write(tlsptr, buffer, l);
       } else {
         write(1, buffer, l );
       }
@@ -194,12 +200,6 @@ int serve(char *current, char *remaining, char *query) {
   return header(51, "not found");
 }
 
-void init() {
-  magic = magic_open(MAGIC_NONE);
-  magic_load(magic, 0);
-  magic_setflags(magic, MAGIC_MIME_TYPE);
-}
-
 int tsubomi(char *raw) {
   char url[1026] = { 0 };
   char path[1026] = { 0 };
@@ -214,26 +214,30 @@ int tsubomi(char *raw) {
   domain = url;
 
   if(strstr(domain, "gemini://") == domain) domain += 9;
-  else if(strstr(domain, "gemini+stream://") == domain) domain += 16;
+  else if(strstr(domain, "//") == domain) domain += 2;
+  else return header(59, "bad request");
 
   if(domain && (rawpath = strchr(domain, '/'))) *rawpath++ = '\0';
   if(rawpath && (rawquery = strchr(rawpath, '?'))) *rawquery++ = '\0';
   if(domain && (port = strchr(domain, ':'))) *port++ = '\0';
 
   char *peer = getenv("TSUBOMI_PEERADDR");
-  if(config.log) {
-    FILE *fp = fopen(config.log, "a");
-    if(fp) {
-      fprintf(fp, "%s:%s\n", peer, raw);
-      fclose(fp);
-    }
+  FILE *fp = fopen(logp, "a");
+  if(fp) {
+    fprintf(fp, "%s:%s\n", peer, raw);
+    fclose(fp);
   }
   fprintf(stderr, "%s:%s\n", peer, raw);
 
+  int ok = 0;
   for(int i = 0; domains[i]; i++) {
-    if(strstr(domain, domains[i]) == domain) break;
-    return header(51, "not found");
+    printf("[%s] vs [%s]\n", domain, domains[i]);
+    if(strstr(domain, domains[i]) == domain) {
+      ok = 1;
+      break;
+    }
   }
+  if(!ok) return header(51, "not found");
 
   if(chdir(domain)) return header(51, "not found");
   decode(rawpath, path);
