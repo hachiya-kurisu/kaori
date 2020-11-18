@@ -1,6 +1,7 @@
 // see us after school for copyright and license details
 
 #include <pwd.h>
+#include <grp.h>
 #include <glob.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -42,7 +43,32 @@ int main(int argc, char **argv) {
 
   init();
   setbuf(stdout, 0);
-  if(chdir(root)) return 1;
+
+  struct group *grp = { 0 };
+  struct passwd *pwd = { 0 };
+
+  if(group) {
+    if (!(grp = getgrnam(group))) return 2;
+  }
+  if(user) {
+    if (!(pwd = getpwnam(user))) return 3;
+  }
+
+  if(secure) {
+    if(chroot(root)) return 1;
+    if(chdir("/")) return 1;
+  } else {
+    if(chdir(root)) return 1;
+  }
+
+  if(group && grp) {
+    if(setgid(grp->gr_gid)) return 5;
+  }
+
+  if(user && pwd) {
+    if(setuid(pwd->pw_uid)) return 7;
+  }
+
   char raw[1026] = { 0 };
   if(!fgets(raw, 1026, stdin)) return 1;
 

@@ -3,6 +3,7 @@
 #define _PR_HAVE_LARGE_OFF_T
 
 #include <pwd.h>
+#include <grp.h>
 #include <glob.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -107,12 +108,31 @@ int main(int argc, char **argv) {
 
   daemon(0, 0);
 
+  struct group *grp = { 0 };
+  struct passwd *pwd = { 0 };
+
+  if(group) {
+    if (!(grp = getgrnam(group))) return 2;
+  }
+  if(user) {
+    if (!(pwd = getpwnam(user))) return 3;
+  }
+
   if(secure) {
     if(chroot(root)) return 1;
     if(chdir("/")) return 1;
   } else {
     if(chdir(root)) return 1;
   }
+
+  if(group && grp) {
+    if(setgid(grp->gr_gid)) return 5;
+  }
+
+  if(user && pwd) {
+    if(setuid(pwd->pw_uid)) return 7;
+  }
+
 
   if(pledge("stdio inet proc dns exec rpath wpath cpath getpw unix", 0))
     return 1;

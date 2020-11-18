@@ -75,7 +75,8 @@ int header(int status, char *meta) {
   char buffer[1026];
   int len = snprintf(buffer, 1026, "%d %s\r\n", status, meta ? meta : "");
   tlsptr ? tls_write(tlsptr, buffer, len) : write(1, buffer, len);
-  return 1;
+  if(tlsptr && status >= 30) tls_close(tlsptr);
+  return 0;
 }
 
 int servefile(char *path) {
@@ -98,6 +99,7 @@ int servefile(char *path) {
   }
   close(fd);
   fflush(stdout);
+  if(tlsptr) tls_close(tlsptr);
   return 0;
 }
 
@@ -137,6 +139,7 @@ int list(char *current) {
         ecurrent, len, epath, len, epath);
     tlsptr ? tls_write(tlsptr, buffer, l) : write(1, buffer, l);
   }
+  if(tlsptr) tls_close(tlsptr);
   return 0;
 }
 
@@ -169,6 +172,7 @@ int cgi(char *path, char *data, char *query) {
     }
   }
   wait(0);
+  if(tlsptr) tls_close(tlsptr);
   return 0;
 }
 
