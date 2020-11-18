@@ -231,7 +231,6 @@ int tsubomi(char *raw) {
 
   int ok = 0;
   for(int i = 0; domains[i]; i++) {
-    printf("[%s] vs [%s]\n", domain, domains[i]);
     if(strstr(domain, domains[i]) == domain) {
       ok = 1;
       break;
