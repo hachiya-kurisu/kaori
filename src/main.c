@@ -86,18 +86,8 @@ int main(int argc, char **argv) {
   tls_config_verify_client_optional(tlsconf);
   tls_config_insecure_noverifycert(tlsconf);
 
-  // tls_config_set_protocols(tlsconf, TLS_PROTOCOLS_DEFAULT);
-  // if(tls_config_set_ciphers(tlsconf, "secure") < 0) exit(1);
-
-  // uint8_t *key, *crt;
-  // size_t keylen, crtlen;
-  // key = tls_load_file("/var/gemini/gemini.key", &keylen, 0);
-  // crt = tls_load_file("/var/gemini/gemini.crt", &crtlen, 0);
-  // tls_config_set_key_mem(tlsconf, key, keylen);
-  // tls_config_set_cert_mem(tlsconf, crt, crtlen);
-
-  if(tls_config_set_key_file(tlsconf, "/var/gemini/gemini.key") < 0) exit(1);
-  if(tls_config_set_cert_file(tlsconf, "/var/gemini/gemini.crt") < 0) exit(1);
+  if(tls_config_set_key_file(tlsconf, keyfile) < 0) exit(1);
+  if(tls_config_set_cert_file(tlsconf, crtfile) < 0) exit(1);
 
   if(tls_configure(tls, tlsconf) < 0) {
     printf("%s\n", tls_error(tls));

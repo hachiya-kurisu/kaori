@@ -32,12 +32,12 @@ install:
 	install libtsubomi.a ${DESTDIR}${PREFIX}/lib/libtsubomi.a
 
 generate-cert:
-	openssl genrsa -out /var/gemini/gemini.key 4096
-	openssl req -new -key /var/gemini/gemini.key \
-		-out /var/gemini/gemini.csr
+	openssl genrsa -out /etc/ssl/private/gemini.key 4096
+	openssl req -new -key /etc/ssl/private/gemini.key \
+		-out /etc/ssl/gemini.csr
 	openssl x509 -req -days 365 -extfile server.ext \
-		-in /var/gemini/gemini.csr -signkey /var/gemini/gemini.key \
-		-out /var/gemini/gemini.crt
+		-in /etc/ssl/gemini.csr -signkey /etc/ssl/gemini.key \
+		-out /etc/ssl/gemini.crt
 
 clean:
 	rm -f tsubomi tsubomi-test tsubomi.o libtsubomi.a
