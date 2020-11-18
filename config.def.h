@@ -1,9 +1,14 @@
-Tsubomi server = {
-  .host = "blekksprut.net",
-  .root = "/var/gemini",
-  .index = "index.gem",
+int secure = 1;
 
-  .notfound = "not found",
-  .back = "head back",
+char *root = "/var/gemini";
+char *indx = "index.gmi";
+char *logp = "tsubomi.log";
+
+char *user = "gemini";
+char *group = "gemini";
+
+char *domains[] = {
+  "localhost",
+  0
 };
 
