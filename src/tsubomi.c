@@ -27,6 +27,7 @@ void init() {
 }
 
 void encode(unsigned char *s, char *enc) {
+  if(!strlen((char *) s)) return;
   char skip[256] = { 0 };
   unsigned int i;
   for(i = 0; i < 256; i++)
