@@ -260,7 +260,16 @@ int unauthorized() {
 }
 
 int serve(char *current, char *remaining, char *query) {
-  if(!remaining || !strcspn(remaining, "/"))
+  // fix this
+  if(!remaining)  {
+    char url[1026] = { 0 };
+    snprintf(url, 1026, "%s/", current);
+    char eurl[BUFSIZ] = { 0 };
+    encode((unsigned char *) url, eurl);
+    return header(30, eurl);
+  }
+
+  if(!strcspn(remaining, "/"))
     return list(current);
 
   char *p = strsep(&remaining, "/");
