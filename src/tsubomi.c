@@ -26,6 +26,50 @@ void init() {
   magic_setflags(cookie, MAGIC_MIME_TYPE);
 }
 
+char *certattr(const char *subject, char *key) {
+  char needle[LINE_MAX] = { 0 };
+  sprintf(needle, "/%s=", key);
+
+  char *found = strstr(subject, needle);
+  char *end;
+  if(found) {
+    found += strlen(needle);
+    end = strchr(found, '/');
+    char *result;
+    asprintf(&result, "%.*s", (int) (end - found), found);
+    return result;
+  }
+  return 0;
+}
+
+void checkcert() {
+  int provided = tls_peer_cert_provided(tlsptr);
+  if(!provided) return;
+
+  setenv("TSUBOMI_CERT_PROVIDED", "true", 1);
+  setenv("TSUBOMI_CLIENT", tls_peer_cert_hash(tlsptr), 1);
+
+  const char *subject = tls_peer_cert_subject(tlsptr);
+  char *uid = certattr(subject, "UID");
+  char *email = certattr(subject, "emailAddress");
+  char *organization = certattr(subject, "O");
+
+  if(uid) setenv("TSUBOMI_UID", uid, 1);
+  if(email) setenv("TSUBOMI_EMAIL", email, 1);
+  if(organization) setenv("TSUBOMI_ORGANIZATION", organization, 1);
+
+  int notbefore = tls_peer_cert_notbefore(tlsptr);
+  int notafter = tls_peer_cert_notafter(tlsptr);
+
+  time_t now = time(0);
+  if(notbefore != -1 && difftime(now, notbefore) < 0) {
+    setenv("TSUBOMI_CERT_INVALID", "Certificate is not yet valid", 1);
+  }
+  if(notafter != -1 && difftime(notafter, now) < 0) {
+    setenv("TSUBOMI_CERT_INVALID", "Certificate is no longer valid", 1);
+  }
+}
+
 void encode(unsigned char *s, char *enc) {
   if(!strlen((char *) s)) {
     enc[0] = '\0';
@@ -34,7 +78,8 @@ void encode(unsigned char *s, char *enc) {
   char skip[256] = { 0 };
   unsigned int i;
   for(i = 0; i < 256; i++)
-    skip[i] = isalnum(i) || i == '~'||i == '-'||i == '.'||i == '_' ? i : 0;
+    skip[i] = isalnum(i) ||
+      i == '~' || i == '-' || i == '.' || i == '_' || i == '/' ? i : 0;
 
   for(; *s; s++) {
     if(skip[(int) *s]) sprintf(enc, "%c", skip[(int) *s]), ++enc;
@@ -88,7 +133,8 @@ int servefile(char *path) {
   if(!fd) return header(51, "not found");
 
   char *mime = (char *) magic_file(cookie, path);
-  header(20, !strcmp(mime, "text/plain") ? "text/gemini" : mime);
+
+  header(20, !strcmp(mime, "text/plain") ? textmime : mime);
 
   char buffer[BUFSIZ] = { 0 };
   ssize_t l;
@@ -114,7 +160,8 @@ int list(char *current) {
   if(S_ISREG(fs.st_mode))
     return servefile(indx);
 
-  header(20, "text/gemini");
+  header(20, textmime);
+
   glob_t res;
   if(glob("*", GLOB_MARK, 0, &res)) {
     char *str = "(*^o^*)\r\n";
@@ -180,6 +227,38 @@ int cgi(char *path, char *data, char *query) {
   return 0;
 }
 
+void setmime() {
+  FILE *f = fopen(".mime", "r");
+  if(!f) return;
+  fgets(textmime, 256, f);
+  while(textmime[strlen(textmime) - 1] == '\n')
+    textmime[strlen(textmime) - 1] = '\0';
+  fclose(f);
+}
+
+int authorized() {
+  FILE *f = fopen(".authorized", "r");
+  if(!f) return 1;
+
+  char *peer = getenv("TSUBOMI_CLIENT");
+  if(!peer) return 0;
+
+  char buffer[BUFSIZ];
+  while(fgets(buffer, BUFSIZ, f) != 0) {
+    buffer[strcspn(buffer, "\n")] = 0;
+    if(!strcmp(buffer, peer)) return 1;
+  }
+  return 0;
+}
+
+int unauthorized() {
+  if(getenv("TSUBOMI_CLIENT")) {
+    return header(61, "Certificate not authorized");
+  } else {
+    return header(60, "Client certificate required"); 
+  }
+}
+
 int serve(char *current, char *remaining, char *query) {
   if(!remaining || !strcspn(remaining, "/"))
     return list(current);
@@ -195,6 +274,9 @@ int serve(char *current, char *remaining, char *query) {
   if(S_ISDIR(fs.st_mode)) {
     sprintf(current + strlen(current), "/%s", p);
     if(chdir(p)) return header(51, "not found");
+    setmime();
+    if(!authorized()) return unauthorized();
+
     return serve(current, remaining, query);
   }
   if(S_ISREG(fs.st_mode)) return servefile(p);
@@ -213,8 +295,9 @@ int tsubomi(char *raw) {
   char path[1026] = { 0 };
   char query[1026] = { 0 };
 
-  char *domain = 0, *port = 0, *rawpath = 0, *rawquery = 0;
+  if(tlsptr) checkcert();
 
+  char *domain = 0, *port = 0, *rawpath = 0, *rawquery = 0;
   for(int i = (int) strlen(raw); i >= 0; i--)
     if(raw[i] == '\n' || raw[i] == '\r') raw[i] = '\0';
 
@@ -232,7 +315,13 @@ int tsubomi(char *raw) {
   char *peer = getenv("TSUBOMI_PEERADDR");
   FILE *fp = fopen(logp, "a");
   if(fp) {
-    fprintf(fp, "%s:%s\n", peer, raw);
+    fprintf(fp, "%s:%s", peer, raw);
+    if(getenv("TSUBOMI_CERT_PROVIDED")) {
+      fprintf(fp, " [%s uid:%s email:%s %s]", getenv("TSUBOMI_CLIENT"),
+          getenv("TSUBOMI_UID"), getenv("TSUBOMI_EMAIL"),
+          getenv("TSUBOMI_CERT_INVALID") ? "-" : "+");
+    }
+    fprintf(fp, "\n");
     fclose(fp);
   }
   fprintf(stderr, "%s:%s\n", peer, raw);
@@ -254,6 +343,10 @@ int tsubomi(char *raw) {
   if(strstr(path, "//")) return header(51, "not found");
 
   char current[2048] = "";
+
+  setmime();
+  if(!authorized()) return unauthorized();
+
   return serve(current, path, query);
 }
 

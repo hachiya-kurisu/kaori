@@ -30,22 +30,6 @@ static void version() {
   printf("%s %s\n", NAME, VERSION);
 }
 
-char *certattr(const char *subject, char *key) {
-  char needle[LINE_MAX] = { 0 };
-  sprintf(needle, "/%s=", key);
-
-  char *found = strstr(subject, needle);
-  char *end;
-  if(found) {
-    found += strlen(needle);
-    end = strchr(found, '/');
-    char *result;
-    asprintf(&result, "%.*s", (int) (end - found), found);
-    return result;
-  }
-  return 0;
-}
-
 static void usage() {
   printf("%s\t[-hvr]\n", NAME);
   printf("\t-h usage\n");
@@ -101,11 +85,11 @@ int main(int argc, char **argv) {
   struct group *grp = { 0 };
   struct passwd *pwd = { 0 };
 
-  if(group) {
-    if (!(grp = getgrnam(group))) return 2;
+  if(setgroup) {
+    if (!(grp = getgrnam(setgroup))) return 2;
   }
-  if(user) {
-    if (!(pwd = getpwnam(user))) return 3;
+  if(setuser) {
+    if (!(pwd = getpwnam(setuser))) return 3;
   }
 
   if(secure) {
@@ -115,14 +99,13 @@ int main(int argc, char **argv) {
     if(chdir(root)) return 1;
   }
 
-  if(group && grp) {
+  if(setgroup && grp) {
     if(setgid(grp->gr_gid)) return 5;
   }
 
-  if(user && pwd) {
+  if(setuser && pwd) {
     if(setuid(pwd->pw_uid)) return 7;
   }
-
 
   if(pledge("stdio inet proc dns exec rpath wpath cpath getpw unix", 0))
     return 1;
@@ -157,37 +140,12 @@ int main(int argc, char **argv) {
       int n = tls_read(tls2, raw, 1026);
       if(n == -1) printf("%s\n", tls_error(tls2));
 
-      int provided = tls_peer_cert_provided(tls2);
-      if(provided == 1) {
-        setenv("TSUBOMI_CLIENT", tls_peer_cert_hash(tls2), 1);
-        const char *subject = tls_peer_cert_subject(tls2);
-        char *uid = certattr(subject, "UID");
-        char *email = certattr(subject, "emailAddress");
-        char *organization = certattr(subject, "O");
-
-        if(uid) setenv("TSUBOMI_UID", uid, 1);
-        if(email) setenv("TSUBOMI_EMAIL", email, 1);
-        if(organization) setenv("TSUBOMI_ORGANIZATION", organization, 1);
-
-        FILE *fp = fopen(logp, "a");
-        if(fp) {
-          fprintf(fp, "%s\n", subject);
-          fprintf(fp, "UID: %s\n", uid);
-          fprintf(fp, "ORGANIZATION: %s\n", organization);
-          fprintf(fp, "EMAIL: %s\n", email);
-          fclose(fp);
-        }
- 
-      }
-
       char ip[INET6_ADDRSTRLEN];
       inet_ntop(AF_INET6, &addr, ip, INET6_ADDRSTRLEN);
-
       setenv("TSUBOMI_PEERADDR", ip, 1);
 
       tlsptr = tls2;
       tsubomi(raw);
-
     } else {
       close(client);
       signal(SIGCHLD,SIG_IGN);
