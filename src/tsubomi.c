@@ -26,6 +26,16 @@ void init() {
   magic_setflags(cookie, MAGIC_MIME_TYPE);
 }
 
+char *classify(char *path) {
+  char *mime = (char *) magic_file(cookie, path);
+
+  for(int i = 0; overrides[i][0]; i++) {
+    if(!strcmp(path, overrides[i][0])) return overrides[i][1];
+  }
+  if(!strcmp(mime, "text/plain")) return textmime;
+  return mime;
+}
+
 char *certattr(const char *subject, char *key) {
   char needle[LINE_MAX] = { 0 };
   sprintf(needle, "/%s=", key);
@@ -132,9 +142,9 @@ int servefile(char *path) {
   int fd = open(path, O_RDONLY);
   if(!fd) return header(51, "not found");
 
-  char *mime = (char *) magic_file(cookie, path);
+  char *mime = classify(path);
 
-  header(20, !strcmp(mime, "text/plain") ? textmime : mime);
+  header(20, mime);
 
   char buffer[BUFSIZ] = { 0 };
   ssize_t l;
@@ -174,6 +184,9 @@ int list(char *current) {
   for(size_t i = 0; i < res.gl_pathc; i++) {
     path = res.gl_pathv[i];
 
+    struct stat fs = { 0 };
+    stat(path, &fs);
+
     char ecurrent[(strlen(current) * 3 + 1)];
     encode((unsigned char *) current, ecurrent);
 
@@ -185,9 +198,12 @@ int list(char *current) {
     if(strstr(epath, ".gmi") == &epath[len - 4]) len -= 4;
 
     char buffer[BUFSIZ * 32] = { 0 };
+    double size = fs.st_size / 1000.0;
 
-    int l = snprintf(buffer, BUFSIZ * 32, "=> %s/%.*s %.*s\n",
-        ecurrent, len, epath, len, epath);
+    char *mime = classify(path);
+    int l = snprintf(buffer, BUFSIZ * 32, "=> %s/%.*s %.*s - %s - %.2f KB\n",
+        ecurrent, len, epath, len, epath, mime, size);
+
     tlsptr ? tls_write(tlsptr, buffer, l) : write(1, buffer, l);
   }
   if(tlsptr) tls_close(tlsptr);
@@ -346,6 +362,7 @@ int tsubomi(char *raw) {
   if(!ok) return header(51, "not found");
 
   if(chdir(domain)) return header(51, "not found");
+
   decode(rawpath, path);
   decode(rawquery, query);
 

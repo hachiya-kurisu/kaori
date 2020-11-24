@@ -11,3 +11,4 @@ extern char textmime[256];
 extern void init(void);
 extern int tsubomi(char *);
 
+extern char *overrides[][2];

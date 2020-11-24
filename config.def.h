@@ -17,3 +17,9 @@ char *domains[] = {
   0
 };
 
+char *overrides[][2] = {
+  { "robots.txt", "text/plain" },
+  { "humans.txt", "text/plain" },
+  { 0 }
+};
+
