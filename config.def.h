@@ -7,6 +7,8 @@ char *logp = "tsubomi.log";
 char *crtfile = "/etc/ssl/gemini.crt";
 char *keyfile = "/etc/ssl/private/gemini.key";
 
+char textmime[256] = "text/gemini";
+
 char *user = "gemini";
 char *group = "gemini";
 

@@ -47,11 +47,11 @@ int main(int argc, char **argv) {
   struct group *grp = { 0 };
   struct passwd *pwd = { 0 };
 
-  if(setgroup) {
-    if (!(grp = getgrnam(setgroup))) return 2;
+  if(group) {
+    if (!(grp = getgrnam(group))) return 2;
   }
-  if(setuser) {
-    if (!(pwd = getpwnam(setuser))) return 3;
+  if(user) {
+    if (!(pwd = getpwnam(user))) return 3;
   }
 
   if(secure) {
@@ -61,11 +61,11 @@ int main(int argc, char **argv) {
     if(chdir(root)) return 1;
   }
 
-  if(setgroup && grp) {
+  if(group && grp) {
     if(setgid(grp->gr_gid)) return 5;
   }
 
-  if(setuser && pwd) {
+  if(user && pwd) {
     if(setuid(pwd->pw_uid)) return 7;
   }
 
