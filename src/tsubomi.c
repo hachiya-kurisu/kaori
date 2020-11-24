@@ -260,13 +260,14 @@ int unauthorized() {
 }
 
 int serve(char *current, char *remaining, char *query) {
-  // fix this
+  // clean up
   if(!remaining)  {
+    char ecurrent[(strlen(current) * 3 + 1)];
+    encode((unsigned char *) current, ecurrent);
+    if(strlen(ecurrent) > 1023) return header(59, "Bad request");
     char url[1026] = { 0 };
-    snprintf(url, 1026, "%s/", current);
-    char eurl[BUFSIZ] = { 0 };
-    encode((unsigned char *) url, eurl);
-    return header(30, eurl);
+    snprintf(url, 1026, "%s/", ecurrent);
+    return header(30, url);
   }
 
   if(!strcspn(remaining, "/"))
