@@ -162,21 +162,22 @@ void transfer(int fd) {
 
 void footer() {
   int fd = open(".footer.gmi", O_RDONLY);
-  if(!fd) return;
+  if(fd == -1) return;
   transfer(fd);
   close(fd);
 }
 
 int servefile(char *path) {
   int fd = open(path, O_RDONLY);
-  if(!fd) return header(51, "not found");
+  if(fd == -1) return header(51, "not found");
 
   char *mime = classify(path);
 
   header(20, mime);
   transfer(fd);
   close(fd);
-  if(!strcmp(mime, "text/gemini")) footer();
+
+  if(strstr(mime, "text/gemini") == mime) footer();
 
   if(tlsptr) tls_close(tlsptr);
   return 0;
