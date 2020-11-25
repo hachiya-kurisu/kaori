@@ -145,14 +145,7 @@ int header(int status, char *meta) {
   return 0;
 }
 
-int servefile(char *path) {
-  int fd = open(path, O_RDONLY);
-  if(!fd) return header(51, "not found");
-
-  char *mime = classify(path);
-
-  header(20, mime);
-
+void transfer(int fd) {
   char buffer[BUFSIZ] = { 0 };
   ssize_t l;
   while((l = read(fd, buffer, BUFSIZ)) != 0) {
@@ -164,8 +157,27 @@ int servefile(char *path) {
       }
     }
   }
+}
+
+void footer() {
+  int fd = open(".footer.gmi", O_RDONLY);
+  if(!fd) return;
+  transfer(fd);
   close(fd);
+}
+
+int servefile(char *path) {
+  int fd = open(path, O_RDONLY);
+  if(!fd) return header(51, "not found");
+
+  char *mime = classify(path);
+
+  header(20, mime);
+  transfer(fd);
+  close(fd);
+  if(!strcmp(mime, "text/gemini")) footer();
   fflush(stdout);
+
   if(tlsptr) tls_close(tlsptr);
   return 0;
 }
