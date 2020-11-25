@@ -157,6 +157,7 @@ void transfer(int fd) {
       }
     }
   }
+  fflush(stdout);
 }
 
 void footer() {
@@ -176,7 +177,6 @@ int servefile(char *path) {
   transfer(fd);
   close(fd);
   if(!strcmp(mime, "text/gemini")) footer();
-  fflush(stdout);
 
   if(tlsptr) tls_close(tlsptr);
   return 0;
