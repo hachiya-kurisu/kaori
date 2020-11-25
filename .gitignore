@@ -1,5 +1,6 @@
+server.ext
 tsubomi
-tsubomi-test
+tsubomi-cli
 tsubomi.o
 libtsubomi.a
 config.h

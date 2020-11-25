@@ -19,7 +19,7 @@
 #include "tsubomi.h"
 
 static void version() {
-  printf("%s %s\n", NAME, VERSION);
+  printf("%s-cli %s\n", NAME, VERSION);
 }
 
 static void usage() {
@@ -47,30 +47,24 @@ int main(int argc, char **argv) {
   struct group *grp = { 0 };
   struct passwd *pwd = { 0 };
 
-  if(group) {
-    if (!(grp = getgrnam(group))) return 2;
-  }
-  if(user) {
-    if (!(pwd = getpwnam(user))) return 3;
-  }
+  if(group && !(grp = getgrnam(group)))
+    return fatal("group %s not found", group);
+
+  if(user && !(pwd = getpwnam(user)))
+    return fatal("user %s not found", user);
 
   if(secure) {
-    if(chroot(root)) return 1;
-    if(chdir("/")) return 1;
+    if(chroot(root)) return fatal("unable to chroot to %s", root);
+    if(chdir("/")) return fatal("unable to chdir to %s", "/");
   } else {
-    if(chdir(root)) return 1;
+    if(chdir(root)) return fatal("unable to chdir to %s", root);
   }
+ 
+  if(group && grp && setgid(grp->gr_gid)) return fatal("setgid failed", 0);
+  if(user && pwd && setuid(pwd->pw_uid)) return fatal("setuid failed", 0);
 
-  if(group && grp) {
-    if(setgid(grp->gr_gid)) return 5;
-  }
-
-  if(user && pwd) {
-    if(setuid(pwd->pw_uid)) return 7;
-  }
-
-  char raw[1026] = { 0 };
-  if(!fgets(raw, 1026, stdin)) return 1;
+  char raw[HEADER] = { 0 };
+  if(!fgets(raw, HEADER, stdin)) return fatal("fgets failed", 0);
 
   setenv("TSUBOMI_PEERADDR", "-", 1);
   return tsubomi(raw);

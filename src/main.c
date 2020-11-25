@@ -58,25 +58,25 @@ int main(int argc, char **argv) {
   struct tls *tls = 0;
   struct tls *tls2 = 0;
 
-  if(tls_init() < 0) exit(1);
+  if(tls_init() < 0) return fatal("tls_init failed", 0);
 
   tls = tls_server();
-  if(!tls) exit(1);
+  if(!tls) return fatal("tls_server failed", 0);
 
   tlsconf = tls_config_new();
-  if(!tlsconf) exit(1);
+  if(!tlsconf) return fatal("tls_config_new failed", 0);
 
-  if(tls_config_set_session_lifetime(tlsconf, 7200) == -1) exit(1);
+  if(tls_config_set_session_lifetime(tlsconf, 7200) == -1)
+    return fatal("tls_conf_set_session lifetime failed", 0);
   tls_config_verify_client_optional(tlsconf);
   tls_config_insecure_noverifycert(tlsconf);
 
-  if(tls_config_set_key_file(tlsconf, keyfile) < 0) exit(1);
-  if(tls_config_set_cert_file(tlsconf, crtfile) < 0) exit(1);
+  if(tls_config_set_key_file(tlsconf, keyfile) < 0)
+    return fatal("tls_config_set_key_file failed", 0);
+  if(tls_config_set_cert_file(tlsconf, crtfile) < 0)
+    return fatal("tls_config_set_cert_file failed", 0);
 
-  if(tls_configure(tls, tlsconf) < 0) {
-    printf("%s\n", tls_error(tls));
-    exit(1);
-  }
+  if(tls_configure(tls, tlsconf) < 0) return fatal("tls_configure failed", 0);
 
   bzero(&addr, sizeof(addr));
 
@@ -85,30 +85,23 @@ int main(int argc, char **argv) {
   struct group *grp = { 0 };
   struct passwd *pwd = { 0 };
 
-  if(group) {
-    if (!(grp = getgrnam(group))) return 2;
-  }
-  if(user) {
-    if (!(pwd = getpwnam(user))) return 3;
-  }
+  if(group && !(grp = getgrnam(group)))
+    return fatal("group %s not found", group);
+
+  if(user && !(pwd = getpwnam(user)))
+    return fatal("user %s not found", user);
 
   if(secure) {
-    if(chroot(root)) return 1;
-    if(chdir("/")) return 1;
+    if(chroot(root)) return fatal("unable to chroot to %s", root);
+    if(chdir("/")) return fatal("unable to chdir to %s", "/");
   } else {
-    if(chdir(root)) return 1;
+    if(chdir(root)) return fatal("unable to chdir to %s", root);
   }
-
-  if(group && grp) {
-    if(setgid(grp->gr_gid)) return 5;
-  }
-
-  if(user && pwd) {
-    if(setuid(pwd->pw_uid)) return 7;
-  }
+  if(group && grp && setgid(grp->gr_gid)) return fatal("setgid failed", 0);
+  if(user && pwd && setuid(pwd->pw_uid)) return fatal("setuid failed", 0);
 
   if(pledge("stdio inet proc dns exec rpath wpath cpath getpw unix", 0))
-    return 1;
+    return fatal("pledge failed", 0);
 
   addr.sin6_family = AF_INET6;
   addr.sin6_port = htons(1965);
@@ -124,7 +117,7 @@ int main(int argc, char **argv) {
   setsockopt(server, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
 
   int bound = bind(server, (struct sockaddr *) &addr, (socklen_t) sizeof(addr));
-  if(bound < 0) exit(1);
+  if(bound < 0) return  fatal("bind failed", 0);
 
   listen(server, 10);
 
@@ -136,8 +129,8 @@ int main(int argc, char **argv) {
       close(server);
       if(tls_accept_socket(tls, &tls2, client) < 0) exit(1);
 
-      char raw[1026] = { 0 };
-      int n = tls_read(tls2, raw, 1026);
+      char raw[HEADER] = { 0 };
+      int n = tls_read(tls2, raw, HEADER);
       if(n == -1) printf("%s\n", tls_error(tls2));
 
       char ip[INET6_ADDRSTRLEN];

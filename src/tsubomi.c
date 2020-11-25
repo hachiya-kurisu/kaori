@@ -26,6 +26,13 @@ void init() {
   magic_setflags(cookie, MAGIC_MIME_TYPE);
 }
 
+int fatal(char *fmt, char *arg) {
+  fprintf(stderr, "%s fatal error! ", NAME);
+  fprintf(stderr, fmt, arg);
+  fprintf(stderr, "\n");
+  return 1;
+}
+
 char *classify(char *path) {
   char *mime = (char *) magic_file(cookie, path);
 
@@ -131,8 +138,8 @@ int decode(char *src, char *dst) {
 }
 
 int header(int status, char *meta) {
-  char buffer[1026];
-  int len = snprintf(buffer, 1026, "%d %s\r\n", status, meta ? meta : "");
+  char buffer[HEADER];
+  int len = snprintf(buffer, HEADER, "%d %s\r\n", status, meta ? meta : "");
   tlsptr ? tls_write(tlsptr, buffer, len) : write(1, buffer, len);
   if(tlsptr && status >= 30) tls_close(tlsptr);
   return 0;
@@ -281,8 +288,8 @@ int serve(char *current, char *remaining, char *query) {
     char ecurrent[(strlen(current) * 3 + 1)];
     encode((unsigned char *) current, ecurrent);
     if(strlen(ecurrent) > 1023) return header(59, "Bad request");
-    char url[1026] = { 0 };
-    snprintf(url, 1026, "%s/", ecurrent);
+    char url[HEADER] = { 0 };
+    snprintf(url, HEADER, "%s/", ecurrent);
     return header(30, url);
   }
 
@@ -317,9 +324,9 @@ int serve(char *current, char *remaining, char *query) {
 }
 
 int tsubomi(char *raw) {
-  char url[1026] = { 0 };
-  char path[1026] = { 0 };
-  char query[1026] = { 0 };
+  char url[HEADER] = { 0 };
+  char path[HEADER] = { 0 };
+  char query[HEADER] = { 0 };
 
   if(tlsptr) checkcert();
 
@@ -350,7 +357,6 @@ int tsubomi(char *raw) {
     fprintf(fp, "\n");
     fclose(fp);
   }
-  fprintf(stderr, "%s:%s\n", peer, raw);
 
   int ok = 0;
   for(int i = 0; domains[i]; i++) {

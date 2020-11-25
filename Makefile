@@ -12,7 +12,7 @@ MANDIR ?= /share/man
 
 LIBS += -lmagic -ltls
 
-all: tsubomi tsubomi-test
+all: tsubomi tsubomi-cli
 
 config.h:
 	cp config.def.h $@
@@ -24,8 +24,8 @@ libtsubomi.a: src/tsubomi.c src/tsubomi.h
 tsubomi: libtsubomi.a config.h src/main.c
 	${CC} ${CFLAGS} ${LDFLAGS} -L. -o $@ src/main.c -ltsubomi ${LIBS}
 
-tsubomi-test: libtsubomi.a config.h src/tsubomi-test.c
-	${CC} ${CFLAGS} ${LDFLAGS} -L. -o $@ src/tsubomi-test.c -ltsubomi ${LIBS}
+tsubomi-cli: libtsubomi.a config.h src/tsubomi-cli.c
+	${CC} ${CFLAGS} ${LDFLAGS} -L. -o $@ src/tsubomi-cli.c -ltsubomi ${LIBS}
 
 install:
 	install tsubomi ${DESTDIR}${PREFIX}/bin/tsubomi
@@ -40,7 +40,7 @@ generate-cert:
 		-out /etc/ssl/gemini.crt
 
 clean:
-	rm -f tsubomi tsubomi-test tsubomi.o libtsubomi.a
+	rm -f tsubomi tsubomi-cli tsubomi.o libtsubomi.a
 
 again: clean all
 
