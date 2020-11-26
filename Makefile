@@ -35,8 +35,8 @@ generate-cert:
 	openssl genrsa -out /etc/ssl/private/gemini.key 4096
 	openssl req -new -key /etc/ssl/private/gemini.key \
 		-out /etc/ssl/gemini.csr
-	openssl x509 -req -days 365 -extfile server.ext \
-		-in /etc/ssl/gemini.csr -signkey /etc/ssl/gemini.key \
+	openssl x509 -req -days 36500 -extfile server.ext \
+		-in /etc/ssl/gemini.csr -signkey /etc/ssl/private/gemini.key \
 		-out /etc/ssl/gemini.crt
 
 clean:
