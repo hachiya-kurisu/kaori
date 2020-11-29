@@ -1,6 +1,6 @@
-#define HEADER 1026
+#define HEADER 1027
 
-void *tlsptr;
+struct tls *tlsptr;
 
 extern char *root;
 extern char *indx;

@@ -21,6 +21,7 @@
 #include <netinet/in.h>
 #include <sys/wait.h>
 
+#include <openssl/ssl.h>
 #include <tls.h>
 #include <magic.h>
 
@@ -57,8 +58,6 @@ int main(int argc, char **argv) {
   struct tls_config *tlsconf = 0;
   struct tls *tls = 0;
   struct tls *tls2 = 0;
-
-  if(tls_init() < 0) return fatal("tls_init failed", 0);
 
   tls = tls_server();
   if(!tls) return fatal("tls_server failed", 0);
@@ -129,6 +128,8 @@ int main(int argc, char **argv) {
       close(server);
       if(tls_accept_socket(tls, &tls2, client) < 0) exit(1);
 
+      tls_handshake(tls2);
+
       char raw[HEADER] = { 0 };
       int n = tls_read(tls2, raw, HEADER);
       if(n == -1) printf("%s\n", tls_error(tls2));
@@ -139,6 +140,7 @@ int main(int argc, char **argv) {
 
       tlsptr = tls2;
       tsubomi(raw);
+      tls_close(tls2);
     } else {
       close(client);
       signal(SIGCHLD,SIG_IGN);

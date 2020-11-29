@@ -141,7 +141,9 @@ int header(int status, char *meta) {
   char buffer[HEADER];
   int len = snprintf(buffer, HEADER, "%d %s\r\n", status, meta ? meta : "");
   tlsptr ? tls_write(tlsptr, buffer, len) : write(1, buffer, len);
-  if(tlsptr && status >= 30) tls_close(tlsptr);
+
+  // if(tlsptr && status >= 30) tls_close(tlsptr);
+
   return 0;
 }
 
@@ -167,9 +169,27 @@ void footer() {
   close(fd);
 }
 
+void setmime(char *path) {
+  char *dotfile;
+  if(path) {
+    asprintf(&dotfile, ".%s.mime", path);
+  } else {
+    dotfile = ".mime";
+  }
+  FILE *f = fopen(dotfile, "r");
+  if(!f) return;
+  fgets(textmime, 256, f);
+  while(textmime[strlen(textmime) - 1] == '\n')
+    textmime[strlen(textmime) - 1] = '\0';
+  fclose(f);
+}
+
+
 int servefile(char *path) {
   int fd = open(path, O_RDONLY);
   if(fd == -1) return header(51, "not found");
+
+  setmime(path);
 
   char *mime = classify(path);
 
@@ -179,7 +199,6 @@ int servefile(char *path) {
 
   if(strstr(mime, "text/gemini") == mime) footer();
 
-  if(tlsptr) tls_close(tlsptr);
   return 0;
 }
 
@@ -226,7 +245,7 @@ int list(char *current) {
 
     tlsptr ? tls_write(tlsptr, buffer, l) : write(1, buffer, l);
   }
-  if(tlsptr) tls_close(tlsptr);
+  // if(tlsptr) tls_close(tlsptr);
   return 0;
 }
 
@@ -259,17 +278,8 @@ int cgi(char *path, char *data, char *query) {
     }
   }
   wait(0);
-  if(tlsptr) tls_close(tlsptr);
+  // if(tlsptr) tls_close(tlsptr);
   return 0;
-}
-
-void setmime() {
-  FILE *f = fopen(".mime", "r");
-  if(!f) return;
-  fgets(textmime, 256, f);
-  while(textmime[strlen(textmime) - 1] == '\n')
-    textmime[strlen(textmime) - 1] = '\0';
-  fclose(f);
 }
 
 int authorized() {
@@ -300,7 +310,6 @@ int serve(char *current, char *remaining, char *query) {
   if(!remaining)  {
     char ecurrent[(strlen(current) * 3 + 1)];
     encode((unsigned char *) current, ecurrent);
-    if(strlen(ecurrent) > 1023) return header(59, "Bad request");
     char url[HEADER] = { 0 };
     snprintf(url, HEADER, "%s/", ecurrent);
     return header(30, url);
@@ -320,7 +329,7 @@ int serve(char *current, char *remaining, char *query) {
   if(S_ISDIR(fs.st_mode)) {
     sprintf(current + strlen(current), "/%s", p);
     if(chdir(p)) return header(51, "not found");
-    setmime();
+    setmime(0);
     if(!authorized()) return unauthorized();
 
     return serve(current, remaining, query);
@@ -336,10 +345,23 @@ int serve(char *current, char *remaining, char *query) {
   return header(51, "not found");
 }
 
+char *valid = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+              "abcdefghijklmnopqrstuvwxyz0123456789"
+              "-._~:/?#[]@!$&'()*+,;=%\r\n";
+
 int tsubomi(char *raw) {
   char url[HEADER] = { 0 };
   char path[HEADER] = { 0 };
   char query[HEADER] = { 0 };
+
+  size_t eof = strspn(raw, valid);
+  if(raw[eof]) return header(59, "bad request");
+
+  if(strlen(raw) >= HEADER) return header(59, "bad request");
+  if(strlen(raw) <= 2) return header(59, "bad request");
+  if(raw[strlen(raw) - 2] != '\r' || raw[strlen(raw) - 1] != '\n') {
+    return 1;
+  }
 
   if(tlsptr) checkcert();
 
@@ -352,11 +374,16 @@ int tsubomi(char *raw) {
 
   if(strstr(domain, "gemini://") == domain) domain += 9;
   else if(strstr(domain, "//") == domain) domain += 2;
+  else if(strstr(domain, "http://") == domain) return header(53, "refused");
+  else if(strstr(domain, "https://") == domain) return header(53, "refused");
+  else if(strstr(domain, "gopher://") == domain) return header(53, "refused");
   else return header(59, "bad request");
 
   if(domain && (rawpath = strchr(domain, '/'))) *rawpath++ = '\0';
   if(rawpath && (rawquery = strchr(rawpath, '?'))) *rawquery++ = '\0';
   if(domain && (port = strchr(domain, ':'))) *port++ = '\0';
+
+  if(port && strcmp(port, "1965")) return header(53, "refused");
 
   char *peer = getenv("TSUBOMI_PEERADDR");
   FILE *fp = fopen(logp, "a");
@@ -378,9 +405,9 @@ int tsubomi(char *raw) {
       break;
     }
   }
-  if(!ok) return header(51, "not found");
+  if(!ok) return header(53, "refused");
 
-  if(chdir(domain)) return header(51, "not found");
+  if(chdir(domain)) return header(59, "refused");
 
   decode(rawpath, path);
   decode(rawquery, query);
@@ -390,7 +417,7 @@ int tsubomi(char *raw) {
 
   char current[2048] = "";
 
-  setmime();
+  setmime(0);
   if(!authorized()) return unauthorized();
 
   return serve(current, path, query);
