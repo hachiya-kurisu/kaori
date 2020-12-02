@@ -71,7 +71,8 @@ void checkcert() {
   }
 }
 
-void encode(unsigned char *s, char *enc) {
+void encode(char *raw, char *enc) {
+  unsigned char *s = (unsigned char *) raw;
   if(!strlen((char *) s)) {
     enc[0] = '\0';
     return;
@@ -178,6 +179,15 @@ int servefile(char *path) {
   return 0;
 }
 
+void entry(char *path, char *name, char *mime, double size) {
+  char *buffer;
+  char escaped[strlen(path) * 3 + 1];
+  encode(path, escaped);
+  int l = asprintf(&buffer, "=> %s %s [%s %.2f KB]\n",
+      escaped, name, mime, size);
+  if(l > 0) tls_write(client, buffer, l);
+}
+
 int list(char *current) {
   struct stat fs = { 0 };
   stat(indx, &fs);
@@ -198,28 +208,13 @@ int list(char *current) {
   char *path;
   for(size_t i = 0; i < res.gl_pathc; i++) {
     path = res.gl_pathv[i];
-
     struct stat fs = { 0 };
     stat(path, &fs);
-
-    char ecurrent[(strlen(current) * 3 + 1)];
-    encode((unsigned char *) current, ecurrent);
-
-    char epath[(strlen(path) * 3 + 1)];
-    encode((unsigned char *) path, epath);
-
-    int len = strlen(epath);
-    if(epath[len - 1] == '~') continue;
-    if(strstr(epath, ".gmi") == &epath[len - 4]) len -= 4;
-
-    char buffer[BUFSIZ * 32] = { 0 };
     double size = fs.st_size / 1000.0;
-
+    char *full;
+    asprintf(&full, "%s/%s", current, path);
     char *mime = classify(path);
-    int l = snprintf(buffer, BUFSIZ * 32, "=> %s/%.*s %.*s - %s - %.2f KB\n",
-        ecurrent, len, epath, len, epath, mime, size);
-
-    tls_write(client, buffer, l);
+    entry(full, path, mime, size);
   }
   return 0;
 }
@@ -276,12 +271,13 @@ int unauthorized() {
 }
 
 int serve(char *current, char *remaining, char *query) {
-  // clean up
   if(!remaining)  {
-    char ecurrent[(strlen(current) * 3 + 1)];
-    encode((unsigned char *) current, ecurrent);
-    char url[HEADER] = { 0 };
-    snprintf(url, HEADER, "%s/", ecurrent);
+    char escaped[(strlen(current) * 3 + 1)];
+    encode(current, escaped);
+    char *url;
+    asprintf(&url, "%s/", escaped);
+    if(strlen(url) <= 0) return header(59, "bad request");
+
     return header(30, url);
   }
 
