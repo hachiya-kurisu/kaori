@@ -18,11 +18,25 @@
 
 #include "tsubomi.h"
 
+void setmime(char *path) {
+  FILE *f = fopen(path, "r");
+  if(!f) return;
+  fgets(textmime, 256, f);
+  while(textmime[strlen(textmime) - 1] == '\n')
+    textmime[strlen(textmime) - 1] = '\0';
+  fclose(f);
+}
+
 char *classify(char *path) {
-  char *mime = (char *) magic_file(cookie, path);
   for(int i = 0; overrides[i][0]; i++) {
     if(!strcmp(path, overrides[i][0])) return overrides[i][1];
   }
+
+  char override[strlen(path) + 7];
+  sprintf(override, ".%s.mime", path);
+  setmime(override);
+
+  char *mime = (char *) magic_file(cookie, path);
   if(!strcmp(mime, "text/plain")) return textmime;
   return mime;
 }
@@ -147,26 +161,9 @@ void footer() {
   close(fd);
 }
 
-void setmime(char *path) {
-  char *dotfile;
-  if(path) {
-    asprintf(&dotfile, ".%s.mime", path);
-  } else {
-    dotfile = ".mime";
-  }
-  FILE *f = fopen(dotfile, "r");
-  if(!f) return;
-  fgets(textmime, 256, f);
-  while(textmime[strlen(textmime) - 1] == '\n')
-    textmime[strlen(textmime) - 1] = '\0';
-  fclose(f);
-}
-
 int servefile(char *path) {
   int fd = open(path, O_RDONLY);
   if(fd == -1) return header(51, "not found");
-
-  setmime(path);
 
   char *mime = classify(path);
 
@@ -181,10 +178,10 @@ int servefile(char *path) {
 
 void entry(char *path, char *name, char *mime, double size) {
   char *buffer;
-  char escaped[strlen(path) * 3 + 1];
-  encode(path, escaped);
+  char encoded[strlen(path) * 3 + 1];
+  encode(path, encoded);
   int l = asprintf(&buffer, "=> %s %s [%s %.2f KB]\n",
-      escaped, name, mime, size);
+      encoded, name, mime, size);
   if(l > 0) tls_write(client, buffer, l);
 }
 
@@ -272,10 +269,8 @@ int unauthorized() {
 
 int serve(char *current, char *remaining, char *query) {
   if(!remaining)  {
-    char escaped[(strlen(current) * 3 + 1)];
-    encode(current, escaped);
     char *url;
-    asprintf(&url, "%s/", escaped);
+    asprintf(&url, "%s/", current);
     if(strlen(url) <= 0) return header(59, "bad request");
 
     return header(30, url);
@@ -284,7 +279,9 @@ int serve(char *current, char *remaining, char *query) {
   if(!strcspn(remaining, "/"))
     return list(current);
 
-  char *p = strsep(&remaining, "/");
+  char *raw = strsep(&remaining, "/");
+  char p[strlen(raw)];
+  decode(raw, p);
 
   struct stat fs = { 0 };
   stat(p, &fs);
@@ -295,7 +292,7 @@ int serve(char *current, char *remaining, char *query) {
   if(S_ISDIR(fs.st_mode)) {
     sprintf(current + strlen(current), "/%s", p);
     if(chdir(p)) return header(51, "not found");
-    setmime(0);
+    setmime(".mime");
     if(!authorized()) return unauthorized();
 
     return serve(current, remaining, query);
@@ -317,8 +314,6 @@ char *valid = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 int tsubomi(char *raw) {
   char url[HEADER] = { 0 };
-  char path[HEADER] = { 0 };
-  char query[HEADER] = { 0 };
 
   size_t eof = strspn(raw, valid);
   if(raw[eof]) return header(59, "bad request");
@@ -330,7 +325,7 @@ int tsubomi(char *raw) {
   }
   checkcert();
 
-  char *domain = 0, *port = 0, *rawpath = 0, *rawquery = 0;
+  char *domain = 0, *port = 0, *path = 0, *query = 0;
   for(int i = (int) strlen(raw); i >= 0; i--)
     if(raw[i] == '\n' || raw[i] == '\r') raw[i] = '\0';
 
@@ -343,8 +338,8 @@ int tsubomi(char *raw) {
     return header(59, "bad request");
   }
 
-  if(domain && (rawpath = strchr(domain, '/'))) *rawpath++ = '\0';
-  if(rawpath && (rawquery = strchr(rawpath, '?'))) *rawquery++ = '\0';
+  if(domain && (path = strchr(domain, '/'))) *path++ = '\0';
+  if(path && (query = strchr(path, '?'))) *query++ = '\0';
   if(domain && (port = strchr(domain, ':'))) *port++ = '\0';
 
   if(port && strcmp(port, "1965")) return header(53, "refused");
@@ -373,15 +368,12 @@ int tsubomi(char *raw) {
 
   if(chdir(domain)) return header(59, "refused");
 
-  decode(rawpath, path);
-  decode(rawquery, query);
-
   if(strstr(path, "..")) return header(51, "not found");
   if(strstr(path, "//")) return header(51, "not found");
 
   char current[2048] = "";
 
-  setmime(0);
+  setmime(".mime");
   if(!authorized()) return unauthorized();
 
   return serve(current, path, query);
