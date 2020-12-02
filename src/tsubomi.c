@@ -18,14 +18,6 @@
 
 #include "tsubomi.h"
 
-static magic_t cookie;
-
-void init() {
-  cookie = magic_open(MAGIC_NONE);
-  magic_load(cookie, 0);
-  magic_setflags(cookie, MAGIC_MIME_TYPE);
-}
-
 int fatal(char *fmt, char *arg) {
   fprintf(stderr, "%s fatal error! ", NAME);
   fprintf(stderr, fmt, arg);
@@ -34,7 +26,7 @@ int fatal(char *fmt, char *arg) {
 }
 
 char *classify(char *path) {
-  char *mime = (char *) magic_file(cookie, path);
+  char *mime = (char *) magic_file(*cookie, path);
 
   for(int i = 0; overrides[i][0]; i++) {
     if(!strcmp(path, overrides[i][0])) return overrides[i][1];
@@ -365,14 +357,13 @@ int tsubomi(char *raw) {
     if(raw[i] == '\n' || raw[i] == '\r') raw[i] = '\0';
 
   sprintf(url, "%s", raw);
-  domain = url;
 
-  if(strstr(domain, "gemini://") == domain) domain += 9;
-  else if(strstr(domain, "//") == domain) domain += 2;
-  else if(strstr(domain, "http://") == domain) return header(53, "refused");
-  else if(strstr(domain, "https://") == domain) return header(53, "refused");
-  else if(strstr(domain, "gopher://") == domain) return header(53, "refused");
-  else return header(59, "bad request");
+  domain = url;
+  if(strstr(domain, "gemini://") == domain) {
+    domain += 9;
+  } else {
+    return header(59, "bad request");
+  }
 
   if(domain && (rawpath = strchr(domain, '/'))) *rawpath++ = '\0';
   if(rawpath && (rawquery = strchr(rawpath, '?'))) *rawquery++ = '\0';

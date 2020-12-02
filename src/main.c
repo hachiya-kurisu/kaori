@@ -50,7 +50,14 @@ int main(int argc, char **argv) {
     }
   }
 
-  init();
+  magic_t ck = magic_open(MAGIC_NONE);
+  magic_load(ck, 0);
+  magic_setflags(ck, MAGIC_MIME_TYPE);
+
+  cookie = &ck;
+  if(!cookie) {
+    printf("we fucked mon\n");
+  }
 
   struct sockaddr_in6 addr;
   int server = socket(AF_INET6, SOCK_STREAM, 0);

@@ -41,7 +41,12 @@ int main(int argc, char **argv) {
     }
   }
 
-  init();
+  magic_t ck = magic_open(MAGIC_NONE);
+  magic_load(ck, 0);
+  magic_setflags(ck, MAGIC_MIME_TYPE);
+
+  cookie = &ck;
+
   setbuf(stdout, 0);
 
   struct group *grp = { 0 };

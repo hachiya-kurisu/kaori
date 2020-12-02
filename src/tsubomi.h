@@ -1,6 +1,7 @@
 #define HEADER 1027
 
 struct tls *tlsptr;
+magic_t *cookie;
 
 extern char *root;
 extern char *indx;
