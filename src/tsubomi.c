@@ -369,8 +369,8 @@ int tsubomi(char *raw) {
 
   if(chdir(domain)) return header(59, "refused");
 
-  if(strstr(path, "..")) return header(51, "not found");
-  if(strstr(path, "//")) return header(51, "not found");
+  if(path && strstr(path, "..")) return header(51, "not found");
+  if(path && strstr(path, "//")) return header(51, "not found");
 
   char current[HEADER] = "";
 
