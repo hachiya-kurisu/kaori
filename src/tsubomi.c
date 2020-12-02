@@ -142,8 +142,6 @@ int header(int status, char *meta) {
   int len = snprintf(buffer, HEADER, "%d %s\r\n", status, meta ? meta : "");
   tlsptr ? tls_write(tlsptr, buffer, len) : write(1, buffer, len);
 
-  // if(tlsptr && status >= 30) tls_close(tlsptr);
-
   return 0;
 }
 
@@ -245,7 +243,6 @@ int list(char *current) {
 
     tlsptr ? tls_write(tlsptr, buffer, l) : write(1, buffer, l);
   }
-  // if(tlsptr) tls_close(tlsptr);
   return 0;
 }
 
@@ -278,7 +275,6 @@ int cgi(char *path, char *data, char *query) {
     }
   }
   wait(0);
-  // if(tlsptr) tls_close(tlsptr);
   return 0;
 }
 
