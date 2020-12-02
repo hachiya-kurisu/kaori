@@ -5,6 +5,7 @@
 #include <pwd.h>
 #include <grp.h>
 #include <glob.h>
+#include <err.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -40,13 +41,6 @@ static void usage() {
 
 #include "../config.h"
 
-int fatal(char *fmt, char *arg) {
-  fprintf(stderr, "%s fatal error! ", NAME);
-  fprintf(stderr, fmt, arg);
-  fprintf(stderr, "\n");
-  return 1;
-}
-
 int main(int argc, char **argv) {
   int c;
   while((c = getopt(argc, argv, "hvr:")) != -1) {
@@ -69,22 +63,23 @@ int main(int argc, char **argv) {
   struct tls *tls2 = 0;
 
   tls = tls_server();
-  if(!tls) return fatal("tls_server failed", 0);
+  if(!tls) errx(1, "tls_server: failed");
 
   tlsconf = tls_config_new();
-  if(!tlsconf) return fatal("tls_config_new failed", 0);
+  if(!tlsconf) errx(1, "tls_config_new: failed");
 
   if(tls_config_set_session_lifetime(tlsconf, 7200) == -1)
-    return fatal("tls_conf_set_session lifetime failed", 0);
+    errx(1, "tls_conf_set_session_lifetime: failed");
   tls_config_verify_client_optional(tlsconf);
   tls_config_insecure_noverifycert(tlsconf);
 
   if(tls_config_set_key_file(tlsconf, keyfile) < 0)
-    return fatal("tls_config_set_key_file failed", 0);
+    errx(1, "tls_config_set_key_file: failed");
   if(tls_config_set_cert_file(tlsconf, crtfile) < 0)
-    return fatal("tls_config_set_cert_file failed", 0);
+    errx(1, "tls_config_set_cert_file: failed");
 
-  if(tls_configure(tls, tlsconf) < 0) return fatal("tls_configure failed", 0);
+  if(tls_configure(tls, tlsconf) < 0)
+    errx(1, "tls_configure: failed");
 
   bzero(&addr, sizeof(addr));
 
@@ -94,22 +89,23 @@ int main(int argc, char **argv) {
   struct passwd *pwd = { 0 };
 
   if(group && !(grp = getgrnam(group)))
-    return fatal("group %s not found", group);
+    errx(1, "getgrnam: group %s not found", group);
 
   if(user && !(pwd = getpwnam(user)))
-    return fatal("user %s not found", user);
+    errx(1, "getpwnam: user %s not found", user);
 
   if(secure) {
-    if(chroot(root)) return fatal("unable to chroot to %s", root);
-    if(chdir("/")) return fatal("unable to chdir to %s", "/");
+    if(chroot(root)) errx(1, "chroot: failed");
+    if(chdir("/")) errx(1, "chdir: failed (after chroot)");
   } else {
-    if(chdir(root)) return fatal("unable to chdir to %s", root);
+    if(chdir(root)) errx(1, "chdir: failed");
   }
-  if(group && grp && setgid(grp->gr_gid)) return fatal("setgid failed", 0);
-  if(user && pwd && setuid(pwd->pw_uid)) return fatal("setuid failed", 0);
+
+  if(group && grp && setgid(grp->gr_gid)) errx(1, "setgid: failed");
+  if(user && pwd && setuid(pwd->pw_uid)) errx(1, "setuid: failed");
 
   if(pledge("stdio inet proc dns exec rpath wpath cpath getpw unix", 0))
-    return fatal("pledge failed", 0);
+    errx(1, "pledge: failed");
 
   addr.sin6_family = AF_INET6;
   addr.sin6_port = htons(1965);
@@ -124,25 +120,24 @@ int main(int argc, char **argv) {
   setsockopt(server, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
   setsockopt(server, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
 
-  int bound = bind(server, (struct sockaddr *) &addr, (socklen_t) sizeof(addr));
-  if(bound < 0) return  fatal("bind failed", 0);
+  if(bind(server, (struct sockaddr *) &addr, (socklen_t) sizeof(addr)))
+    errx(1, "bind: failed");
 
   listen(server, 10);
 
   int sock;
-  socklen_t socklen = sizeof(addr);
-  while((sock = accept(server, (struct sockaddr *) &addr, &socklen)) > -1) {
+  socklen_t len = sizeof(addr);
+  while((sock = accept(server, (struct sockaddr *) &addr, &len)) > -1) {
     pid_t pid = fork();
     if(!pid) {
       close(server);
       if(tls_accept_socket(tls, &tls2, sock) < 0) exit(1);
 
-      tls_handshake(tls2);
-
       char raw[HEADER] = { 0 };
-      int n = tls_read(tls2, raw, HEADER);
-      if(n == -1) printf("%s\n", tls_error(tls2));
 
+      if(tls_read(tls2, raw, HEADER) == -1)
+        errx(1, "tls_read: failed");
+        
       char ip[INET6_ADDRSTRLEN];
       inet_ntop(AF_INET6, &addr, ip, INET6_ADDRSTRLEN);
       setenv("TSUBOMI_PEERADDR", ip, 1);

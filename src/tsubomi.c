@@ -2,10 +2,11 @@
 
 #define _PR_HAVE_LARGE_OFF_T
 
-#include <glob.h>
-#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <fcntl.h>
+#include <glob.h>
+#include <err.h>
 #include <string.h>
 #include <ctype.h>
 #include <unistd.h>
@@ -108,49 +109,62 @@ void encode(char *raw, char *enc) {
 
 int decode(char *src, char *dst) {
   int pos = 0;
-  char buffer[3] = { 0 };
+  char buf[3] = { 0 };
   unsigned int decoded;
 
   while(src && *src) {
-    buffer[pos] = *src;
+    buf[pos] = *src;
 
     if(pos == 2) {
-      if(buffer[0] == '%' && isxdigit(buffer[1]) && isxdigit(buffer[2])) {
-        sscanf(buffer, "%%%2x", &decoded);
+      if(buf[0] == '%' && isxdigit(buf[1]) && isxdigit(buf[2])) {
+        sscanf(buf, "%%%2x", &decoded);
         *dst++ = decoded;
-        memset(buffer, 0, 3);
+        memset(buf, 0, 3);
         pos = 0;
       } else {
-        *dst++ = buffer[0];
-        memmove(buffer, &buffer[1], 2);
-        buffer[2] = 0;
+        *dst++ = buf[0];
+        memmove(buf, &buf[1], 2);
+        buf[2] = 0;
       }
     } else {
       pos++;
     }
     src++;
   }
-  char *rest = buffer;
+  char *rest = buf;
   while(pos--) *dst++ = *rest++;
   *dst++ = '\0';
   return 0;
 }
 
+void writebuf(char *buf, int len) {
+  ssize_t ret;
+  while(len > 0) {
+    ret = tls_write(client, buf, len);
+    if(ret == TLS_WANT_POLLIN || ret == TLS_WANT_POLLOUT)
+      continue;
+    if(ret == -1)
+      errx(1, "tls_write: %s", tls_error(client));
+    buf += ret;
+    len -= ret;
+  }
+}
+
 int header(int status, char *meta) {
-  char buffer[HEADER];
+  char buf[HEADER];
   if(strlen(meta) > 1024) return 1;
-  int l = snprintf(buffer, HEADER, "%d %s\r\n", status, meta ? meta : "");
-  if(l <= 0) return 1;
-  tls_write(client, buffer, l);
+  int len = snprintf(buf, HEADER, "%d %s\r\n", status, meta ? meta : "");
+  if(len <= 0) return 1;
+  writebuf(buf, len);
   return 0;
 }
 
 void transfer(int fd) {
-  char buffer[BUFSIZ] = { 0 };
-  ssize_t l;
-  while((l = read(fd, buffer, BUFSIZ)) != 0) {
-    if(l > 0) {
-      tls_write(client, buffer, l);
+  char buf[BUFSIZ] = { 0 };
+  ssize_t len;
+  while((len = read(fd, buf, BUFSIZ)) != 0) {
+    if(len > 0) {
+      writebuf(buf, len);
     }
   }
   fflush(stdout);
@@ -179,12 +193,12 @@ int servefile(char *path) {
 }
 
 void entry(char *path, char *name, char *mime, double size) {
-  char *buffer;
+  char *buf;
   char encoded[strlen(path) * 3 + 1];
   encode(path, encoded);
-  int l = asprintf(&buffer, "=> %s %s [%s %.2f KB]\n",
+  int len = asprintf(&buf, "=> %s %s [%s %.2f KB]\n",
       encoded, name, mime, size);
-  if(l > 0) tls_write(client, buffer, l);
+  if(len > 0) writebuf(buf, len);
 }
 
 int list(char *current) {
@@ -198,10 +212,8 @@ int list(char *current) {
 
   glob_t res;
   if(glob("*", GLOB_MARK, 0, &res)) {
-    char *str = "(*^o^*)\r\n";
-    int l = strlen(str);
-    tls_write(client, str, l);
-
+    char *empty = "(*^o^*)\r\n";
+    writebuf(empty, strlen(empty));
     return 0;
   }
   char *path;
@@ -235,12 +247,10 @@ int cgi(char *path, char *data, char *query) {
   }
   close(fd[1]);
 
-  char buffer[BUFSIZ] = { 0 };
-  ssize_t l;
-  while((l = read(fd[0], buffer, BUFSIZ)) != 0) {
-    if(l > 0) {
-      tls_write(client, buffer, l);
-    }
+  char buf[BUFSIZ] = { 0 };
+  ssize_t len;
+  while((len = read(fd[0], buf, BUFSIZ)) != 0) {
+    writebuf(buf, len);
   }
   wait(0);
   return 0;
@@ -253,10 +263,10 @@ int authorized() {
   char *peer = getenv("TSUBOMI_CLIENT");
   if(!peer) return 0;
 
-  char buffer[BUFSIZ];
-  while(fgets(buffer, BUFSIZ, f) != 0) {
-    buffer[strcspn(buffer, "\n")] = 0;
-    if(!strcmp(buffer, peer)) return 1;
+  char buf[BUFSIZ];
+  while(fgets(buf, BUFSIZ, f) != 0) {
+    buf[strcspn(buf, "\n")] = 0;
+    if(!strcmp(buf, peer)) return 1;
   }
   return 0;
 }
@@ -282,26 +292,26 @@ int serve(char *current, char *remaining, char *query) {
     return list(current);
 
   char *raw = strsep(&remaining, "/");
-  char p[strlen(raw)];
-  decode(raw, p);
+  char path[strlen(raw)];
+  decode(raw, path);
 
   struct stat fs = { 0 };
-  stat(p, &fs);
+  stat(path, &fs);
 
   if(S_ISREG(fs.st_mode) && fs.st_mode & S_IXOTH)
-    return cgi(p, remaining, query);
+    return cgi(path, remaining, query);
 
   if(S_ISDIR(fs.st_mode)) {
-    sprintf(current + strlen(current), "/%s", p);
-    if(chdir(p)) return header(51, "not found");
+    sprintf(current + strlen(current), "/%s", path);
+    if(chdir(path)) return header(51, "not found");
     if(!authorized()) return unauthorized();
     setmime(".mime");
     return serve(current, remaining, query);
   }
-  if(S_ISREG(fs.st_mode)) return servefile(p);
+  if(S_ISREG(fs.st_mode)) return servefile(path);
 
   char inferred[LINE_MAX];
-  sprintf(inferred, "%s.gmi", p);
+  sprintf(inferred, "%s.gmi", path);
   memset(&fs, 0, sizeof(fs)); 
   stat(inferred, &fs);
   if(S_ISREG(fs.st_mode)) return servefile(inferred);
@@ -310,8 +320,8 @@ int serve(char *current, char *remaining, char *query) {
 }
 
 char *valid = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-              "abcdefghijklmnopqrstuvwxyz0123456789"
-              "-._~:/?#[]@!$&'()*+,;=%\r\n";
+"abcdefghijklmnopqrstuvwxyz0123456789"
+"-._~:/?#[]@!$&'()*+,;=%\r\n";
 
 int tsubomi(char *raw) {
   char url[HEADER] = { 0 };

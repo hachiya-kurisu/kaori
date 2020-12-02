@@ -5,12 +5,12 @@ OS != uname -s
 
 CFLAGS += -DVERSION=\"${VERSION}\"
 CFLAGS += -DNAME=\"tsubomi\"
-CFLAGS += -Os -Wall -Wextra -std=c99 -pedantic
+CFLAGS += -Os -Wall -Wextra -std=c99 -pedantic -static
 
 PREFIX ?= /usr/local
 MANDIR ?= /share/man
 
-LIBS += -lmagic -ltls
+LIBS += -lmagic -ltls -lssl -lz -lcrypto
 
 all: tsubomi
 
