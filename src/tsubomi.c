@@ -18,16 +18,8 @@
 
 #include "tsubomi.h"
 
-int fatal(char *fmt, char *arg) {
-  fprintf(stderr, "%s fatal error! ", NAME);
-  fprintf(stderr, fmt, arg);
-  fprintf(stderr, "\n");
-  return 1;
-}
-
 char *classify(char *path) {
-  char *mime = (char *) magic_file(*cookie, path);
-
+  char *mime = (char *) magic_file(cookie, path);
   for(int i = 0; overrides[i][0]; i++) {
     if(!strcmp(path, overrides[i][0])) return overrides[i][1];
   }
@@ -52,13 +44,13 @@ char *certattr(const char *subject, char *key) {
 }
 
 void checkcert() {
-  int provided = tls_peer_cert_provided(tlsptr);
+  int provided = tls_peer_cert_provided(client);
   if(!provided) return;
 
   setenv("TSUBOMI_CERT_PROVIDED", "true", 1);
-  setenv("TSUBOMI_CLIENT", tls_peer_cert_hash(tlsptr), 1);
+  setenv("TSUBOMI_CLIENT", tls_peer_cert_hash(client), 1);
 
-  const char *subject = tls_peer_cert_subject(tlsptr);
+  const char *subject = tls_peer_cert_subject(client);
   char *uid = certattr(subject, "UID");
   char *email = certattr(subject, "emailAddress");
   char *organization = certattr(subject, "O");
@@ -67,8 +59,8 @@ void checkcert() {
   if(email) setenv("TSUBOMI_EMAIL", email, 1);
   if(organization) setenv("TSUBOMI_ORGANIZATION", organization, 1);
 
-  int notbefore = tls_peer_cert_notbefore(tlsptr);
-  int notafter = tls_peer_cert_notafter(tlsptr);
+  int notbefore = tls_peer_cert_notbefore(client);
+  int notafter = tls_peer_cert_notafter(client);
 
   time_t now = time(0);
   if(notbefore != -1 && difftime(now, notbefore) < 0) {
@@ -131,9 +123,8 @@ int decode(char *src, char *dst) {
 
 int header(int status, char *meta) {
   char buffer[HEADER];
-  int len = snprintf(buffer, HEADER, "%d %s\r\n", status, meta ? meta : "");
-  tlsptr ? tls_write(tlsptr, buffer, len) : write(1, buffer, len);
-
+  int l = snprintf(buffer, HEADER, "%d %s\r\n", status, meta ? meta : "");
+  tls_write(client, buffer, l);
   return 0;
 }
 
@@ -142,11 +133,7 @@ void transfer(int fd) {
   ssize_t l;
   while((l = read(fd, buffer, BUFSIZ)) != 0) {
     if(l > 0) {
-      if(tlsptr) {
-        tls_write(tlsptr, buffer, l);
-      } else {
-        write(1, buffer, l);
-      }
+      tls_write(client, buffer, l);
     }
   }
   fflush(stdout);
@@ -203,8 +190,8 @@ int list(char *current) {
   glob_t res;
   if(glob("*", GLOB_MARK, 0, &res)) {
     char *str = "(*^o^*)\r\n";
-    int len = strlen(str);
-    tlsptr ? tls_write(tlsptr, str, len) : write(1, str, len);
+    int l = strlen(str);
+    tls_write(client, str, l);
 
     return 0;
   }
@@ -232,7 +219,7 @@ int list(char *current) {
     int l = snprintf(buffer, BUFSIZ * 32, "=> %s/%.*s %.*s - %s - %.2f KB\n",
         ecurrent, len, epath, len, epath, mime, size);
 
-    tlsptr ? tls_write(tlsptr, buffer, l) : write(1, buffer, l);
+    tls_write(client, buffer, l);
   }
   return 0;
 }
@@ -258,11 +245,7 @@ int cgi(char *path, char *data, char *query) {
   ssize_t l;
   while((l = read(fd[0], buffer, BUFSIZ)) != 0) {
     if(l > 0) {
-      if(tlsptr) {
-        tls_write(tlsptr, buffer, l);
-      } else {
-        write(1, buffer, l );
-      }
+      tls_write(client, buffer, l);
     }
   }
   wait(0);
@@ -349,8 +332,7 @@ int tsubomi(char *raw) {
   if(raw[strlen(raw) - 2] != '\r' || raw[strlen(raw) - 1] != '\n') {
     return 1;
   }
-
-  if(tlsptr) checkcert();
+  checkcert();
 
   char *domain = 0, *port = 0, *rawpath = 0, *rawquery = 0;
   for(int i = (int) strlen(raw); i >= 0; i--)

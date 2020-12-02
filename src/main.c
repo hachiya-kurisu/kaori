@@ -40,6 +40,13 @@ static void usage() {
 
 #include "../config.h"
 
+int fatal(char *fmt, char *arg) {
+  fprintf(stderr, "%s fatal error! ", NAME);
+  fprintf(stderr, fmt, arg);
+  fprintf(stderr, "\n");
+  return 1;
+}
+
 int main(int argc, char **argv) {
   int c;
   while((c = getopt(argc, argv, "hvr:")) != -1) {
@@ -50,14 +57,9 @@ int main(int argc, char **argv) {
     }
   }
 
-  magic_t ck = magic_open(MAGIC_NONE);
-  magic_load(ck, 0);
-  magic_setflags(ck, MAGIC_MIME_TYPE);
-
-  cookie = &ck;
-  if(!cookie) {
-    printf("we fucked mon\n");
-  }
+  cookie = magic_open(MAGIC_NONE);
+  magic_load(cookie, 0);
+  magic_setflags(cookie, MAGIC_MIME_TYPE);
 
   struct sockaddr_in6 addr;
   int server = socket(AF_INET6, SOCK_STREAM, 0);
@@ -127,13 +129,13 @@ int main(int argc, char **argv) {
 
   listen(server, 10);
 
-  int client;
+  int sock;
   socklen_t socklen = sizeof(addr);
-  while((client = accept(server, (struct sockaddr *) &addr, &socklen)) > -1) {
+  while((sock = accept(server, (struct sockaddr *) &addr, &socklen)) > -1) {
     pid_t pid = fork();
     if(!pid) {
       close(server);
-      if(tls_accept_socket(tls, &tls2, client) < 0) exit(1);
+      if(tls_accept_socket(tls, &tls2, sock) < 0) exit(1);
 
       tls_handshake(tls2);
 
@@ -145,11 +147,11 @@ int main(int argc, char **argv) {
       inet_ntop(AF_INET6, &addr, ip, INET6_ADDRSTRLEN);
       setenv("TSUBOMI_PEERADDR", ip, 1);
 
-      tlsptr = tls2;
+      client = tls2;
       tsubomi(raw);
       tls_close(tls2);
     } else {
-      close(client);
+      close(sock);
       signal(SIGCHLD,SIG_IGN);
     }
   }
