@@ -182,7 +182,6 @@ void setmime(char *path) {
   fclose(f);
 }
 
-
 int servefile(char *path) {
   int fd = open(path, O_RDONLY);
   if(fd == -1) return header(51, "not found");
