@@ -138,7 +138,9 @@ int decode(char *src, char *dst) {
 
 int header(int status, char *meta) {
   char buffer[HEADER];
+  if(strlen(meta) > 1024) return 1;
   int l = snprintf(buffer, HEADER, "%d %s\r\n", status, meta ? meta : "");
+  if(l <= 0) return 1;
   tls_write(client, buffer, l);
   return 0;
 }
@@ -292,9 +294,8 @@ int serve(char *current, char *remaining, char *query) {
   if(S_ISDIR(fs.st_mode)) {
     sprintf(current + strlen(current), "/%s", p);
     if(chdir(p)) return header(51, "not found");
-    setmime(".mime");
     if(!authorized()) return unauthorized();
-
+    setmime(".mime");
     return serve(current, remaining, query);
   }
   if(S_ISREG(fs.st_mode)) return servefile(p);
@@ -371,11 +372,10 @@ int tsubomi(char *raw) {
   if(strstr(path, "..")) return header(51, "not found");
   if(strstr(path, "//")) return header(51, "not found");
 
-  char current[2048] = "";
+  char current[HEADER] = "";
 
-  setmime(".mime");
   if(!authorized()) return unauthorized();
-
+  setmime(".mime");
   return serve(current, path, query);
 }
 
