@@ -141,10 +141,8 @@ void writebuf(char *buf, int len) {
   ssize_t ret;
   while(len > 0) {
     ret = tls_write(client, buf, len);
-    if(ret == TLS_WANT_POLLIN || ret == TLS_WANT_POLLOUT)
-      continue;
-    if(ret == -1)
-      errx(1, "tls_write: %s", tls_error(client));
+    if(ret == TLS_WANT_POLLIN || ret == TLS_WANT_POLLOUT) continue;
+    if(ret == -1) errx(1, "tls_write: %s", tls_error(client));
     buf += ret;
     len -= ret;
   }
@@ -239,6 +237,8 @@ int cgi(char *path, char *data, char *query) {
   pipe(fd);
 
   pid_t pid = fork();
+  if(pid == -1) errx(1, "fork failed");
+
   if(!pid) {
     dup2(fd[1], 1);
     close(fd[0]);
