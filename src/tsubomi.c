@@ -287,7 +287,10 @@ int authorized() {
   if(!f) return 1;
 
   char *peer = getenv("TSUBOMI_CLIENT");
-  if(!peer) return 0;
+  if(!peer) {
+    fclose(f);
+    return 0;
+  }
 
   char buf[BUFSIZ];
 
@@ -412,6 +415,7 @@ int tsubomi(char *raw) {
 
   if(chdir(domain)) return header(59, "refused");
 
+  if(path && *path == '/') return header(51, "not found");
   if(path && strstr(path, "..")) return header(51, "not found");
   if(path && strstr(path, "//")) return header(51, "not found");
 
@@ -419,6 +423,7 @@ int tsubomi(char *raw) {
 
   if(!authorized()) return unauthorized();
   setmime(".mime");
+
   return serve(current, path, query);
 }
 
