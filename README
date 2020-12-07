@@ -1,9 +1,9 @@
-= tsubomi
+# kaori
 
 personal gemini server
 no tls support, do some socat/stunnel
 
-= build and install
+## build and install
 
 $ make
 $ make install

@@ -1,6 +1,5 @@
 server.ext
-tsubomi
-tsubomi-cli
-tsubomi.o
-libtsubomi.a
+kaori
+kaori.o
+libkaori.a
 config.h

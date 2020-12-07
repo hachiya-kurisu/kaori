@@ -17,7 +17,7 @@
 #include <magic.h>
 #include <tls.h>
 
-#include "tsubomi.h"
+#include "kaori.h"
 
 char *valid = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
               "abcdefghijklmnopqrstuvwxyz0123456789"
@@ -355,7 +355,7 @@ int serve(char *current, char *remaining, char *query) {
   return header(51, "not found");
 }
 
-int tsubomi(char *raw) {
+int kaori(char *raw) {
   char url[HEADER] = { 0 };
 
   size_t eof = strspn(raw, valid);

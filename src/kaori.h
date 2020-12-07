@@ -12,7 +12,7 @@ extern char *domains[];
 extern char textmime[256];
 
 extern void init(void);
-extern int tsubomi(char *);
+extern int kaori(char *);
 
 extern char *overrides[][2];
 

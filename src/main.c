@@ -26,7 +26,7 @@
 #include <tls.h>
 #include <magic.h>
 
-#include "tsubomi.h"
+#include "kaori.h"
 
 static void version() {
   printf("%s %s\n", NAME, VERSION);
@@ -143,7 +143,7 @@ int main(int argc, char **argv) {
       setenv("TSUBOMI_PEERADDR", ip, 1);
 
       client = tls2;
-      tsubomi(raw);
+      kaori(raw);
       tls_close(tls2);
     } else {
       close(sock);
