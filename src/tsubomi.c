@@ -47,10 +47,9 @@ char *certattr(const char *subject, char *key) {
   sprintf(needle, "/%s=", key);
 
   char *found = strstr(subject, needle);
-  char *end;
   if(found) {
     found += strlen(needle);
-    end = strchr(found, '/');
+    char *end = strchr(found, '/');
     char *result;
     asprintf(&result, "%.*s", (int) (end - found), found);
     return result;
@@ -138,9 +137,8 @@ int decode(char *src, char *dst) {
 }
 
 void writebuf(char *buf, int len) {
-  ssize_t ret;
   while(len > 0) {
-    ret = tls_write(client, buf, len);
+    ssize_t ret = tls_write(client, buf, len);
     if(ret == TLS_WANT_POLLIN || ret == TLS_WANT_POLLOUT) continue;
     if(ret == -1) errx(1, "tls_write: %s", tls_error(client));
     buf += ret;
@@ -151,7 +149,7 @@ void writebuf(char *buf, int len) {
 int header(int status, char *meta) {
   char buf[HEADER];
   if(strlen(meta) > 1024) return 1;
-  int len = snprintf(buf, HEADER, "%d %s\r\n", status, meta ? meta : "");
+  int len = snprintf(buf, HEADER, "%d %s\r\n", status, *meta ? meta : "");
   if(len <= 0) return 1;
   writebuf(buf, len);
   return 0;
@@ -200,10 +198,10 @@ void entry(char *path, char *name, char *mime, double size) {
 }
 
 int list(char *current) {
-  struct stat fs = { 0 };
-  stat(indx, &fs);
+  struct stat ifs = { 0 };
+  stat(indx, &ifs);
 
-  if(S_ISREG(fs.st_mode))
+  if(S_ISREG(ifs.st_mode))
     return servefile(indx);
 
   header(20, textmime);
@@ -214,9 +212,8 @@ int list(char *current) {
     writebuf(empty, strlen(empty));
     return 0;
   }
-  char *path;
   for(size_t i = 0; i < res.gl_pathc; i++) {
-    path = res.gl_pathv[i];
+    char *path = res.gl_pathv[i];
     struct stat fs = { 0 };
     stat(path, &fs);
     double size = fs.st_size / 1000.0;
@@ -257,18 +254,22 @@ int cgi(char *path, char *data, char *query) {
 }
 
 int authorized() {
-  FILE *f = fopen(".authorized", "r");
-  if(!f) return 1;
-
   char *peer = getenv("TSUBOMI_CLIENT");
   if(!peer) return 0;
 
+  FILE *f = fopen(".authorized", "r");
+  if(!f) return 1;
   char buf[BUFSIZ];
+
+  int ret = 0;
   while(fgets(buf, BUFSIZ, f) != 0) {
     buf[strcspn(buf, "\n")] = 0;
-    if(!strcmp(buf, peer)) return 1;
+    if(!strcmp(buf, peer)) {
+      ret = 1;
+      break;
+    };
   }
-  return 0;
+  return ret;
 }
 
 int unauthorized() {
@@ -283,7 +284,7 @@ int serve(char *current, char *remaining, char *query) {
   if(!remaining)  {
     char *url;
     asprintf(&url, "%s/", current);
-    if(strlen(url) <= 0) return header(59, "bad request");
+    if(!strlen(url)) return header(59, "bad request");
 
     return header(30, url);
   }
