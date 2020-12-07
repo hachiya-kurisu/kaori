@@ -94,7 +94,7 @@ void encode(char *raw, char *enc) {
   char skip[256] = { 0 };
   unsigned int i;
   for(i = 0; i < 256; i++)
-    skip[i] = isalnum(i) ||
+    skip[i] = isalnum(i) || i == '%' || i == ':' ||
       i == '~' || i == '-' || i == '.' || i == '_' || i == '/' ? i : 0;
 
   for(; *s; s++) {
@@ -155,6 +155,32 @@ int header(int status, char *meta) {
   return 0;
 }
 
+void gmilink(char *buf) {
+  char *p = buf;
+  strsep(&p, " \t");
+  char *link = strsep(&p, " \t\r\n");
+  char *text = p ? strsep(&p, "\r\n") : "";
+  char encoded[strlen(link) * 3 + 1];
+  encode(link, encoded);
+  char line[BUFSIZ];
+  if(text) {
+    snprintf(line, BUFSIZ, "=> %s %s\n", encoded, text);
+  } else {
+    snprintf(line, BUFSIZ, "=> %s\n", encoded);
+  }
+  writebuf(line, strlen(line));
+}
+
+void gmitransfer(int fd) {
+  FILE *fp = fdopen(fd, "r");
+  char buf[BUFSIZ];
+  while(fgets(buf, BUFSIZ, fp)) {
+    if(strstr(buf, "=>") == buf) gmilink(buf);
+    else writebuf(buf, strlen(buf));
+  }
+  fclose(fp);
+}
+
 void transfer(int fd) {
   char buf[BUFSIZ] = { 0 };
   ssize_t len;
@@ -163,7 +189,6 @@ void transfer(int fd) {
       writebuf(buf, len);
     }
   }
-  fflush(stdout);
 }
 
 void footer() {
@@ -179,8 +204,12 @@ int servefile(char *path) {
 
   char *mime = classify(path);
 
+  int isgemini = strstr(mime, "text/gemini") == mime;
+
   header(20, mime);
-  transfer(fd);
+
+  isgemini ? gmitransfer(fd) : transfer(fd);
+
   close(fd);
 
   if(strstr(mime, "text/gemini") == mime) footer();
@@ -254,11 +283,12 @@ int cgi(char *path, char *data, char *query) {
 }
 
 int authorized() {
+  FILE *f = fopen(".authorized", "r");
+  if(!f) return 1;
+
   char *peer = getenv("TSUBOMI_CLIENT");
   if(!peer) return 0;
 
-  FILE *f = fopen(".authorized", "r");
-  if(!f) return 1;
   char buf[BUFSIZ];
 
   int ret = 0;
@@ -286,7 +316,9 @@ int serve(char *current, char *remaining, char *query) {
     asprintf(&url, "%s/", current);
     if(!strlen(url)) return header(59, "bad request");
 
-    return header(30, url);
+    char encoded[strlen(url) * 3 + 1];
+    encode(url, encoded);
+    return header(30, encoded);
   }
 
   if(!strcspn(remaining, "/"))
