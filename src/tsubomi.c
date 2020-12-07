@@ -19,6 +19,10 @@
 
 #include "tsubomi.h"
 
+char *valid = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+              "abcdefghijklmnopqrstuvwxyz0123456789"
+              "-._~:/?#[]@!$&'()*+,;=%\r\n";
+
 void setmime(char *path) {
   FILE *f = fopen(path, "r");
   if(!f) return;
@@ -29,16 +33,12 @@ void setmime(char *path) {
 }
 
 char *classify(char *path) {
-  for(int i = 0; overrides[i][0]; i++) {
-    if(!strcmp(path, overrides[i][0])) return overrides[i][1];
-  }
-
   char override[strlen(path) + 7];
   sprintf(override, ".%s.mime", path);
   setmime(override);
 
   char *mime = (char *) magic_file(cookie, path);
-  if(!strcmp(mime, "text/plain")) return textmime;
+  if(strstr(mime, "text/") == mime) return textmime;
   return mime;
 }
 
@@ -91,12 +91,12 @@ void encode(char *raw, char *enc) {
     enc[0] = '\0';
     return;
   }
-  char skip[256] = { 0 };
-  unsigned int i;
-  for(i = 0; i < 256; i++)
-    skip[i] = isalnum(i) || i == '%' || i == ':' ||
-      i == '~' || i == '-' || i == '.' || i == '_' || i == '/' ? i : 0;
-
+  static char skip[256] = { 0 };
+  if(!skip[(int) '-']) {
+    unsigned int i;
+    for(i = 0; i < 256; i++)
+      skip[i] = strchr(valid, i) ? i : 0;
+  }
   for(; *s; s++) {
     if(skip[(int) *s]) sprintf(enc, "%c", skip[(int) *s]), ++enc;
     else {
@@ -354,10 +354,6 @@ int serve(char *current, char *remaining, char *query) {
 
   return header(51, "not found");
 }
-
-char *valid = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-"abcdefghijklmnopqrstuvwxyz0123456789"
-"-._~:/?#[]@!$&'()*+,;=%\r\n";
 
 int tsubomi(char *raw) {
   char url[HEADER] = { 0 };
