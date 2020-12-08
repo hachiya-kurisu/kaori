@@ -1,4 +1,5 @@
 #define HEADER 1027
+#define BUFFER 4096
 
 struct tls *client;
 magic_t cookie;

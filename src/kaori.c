@@ -162,19 +162,19 @@ void gmilink(char *buf) {
   char *text = p ? strsep(&p, "\r\n") : "";
   char encoded[strlen(link) * 3 + 1];
   encode(link, encoded);
-  char line[BUFSIZ];
+  char line[LINE_MAX];
   if(text) {
-    snprintf(line, BUFSIZ, "=> %s %s\n", encoded, text);
+    snprintf(line, LINE_MAX, "=> %s %s\n", encoded, text);
   } else {
-    snprintf(line, BUFSIZ, "=> %s\n", encoded);
+    snprintf(line, LINE_MAX, "=> %s\n", encoded);
   }
   writebuf(line, strlen(line));
 }
 
 void gmitransfer(int fd) {
   FILE *fp = fdopen(fd, "r");
-  char buf[BUFSIZ];
-  while(fgets(buf, BUFSIZ, fp)) {
+  char buf[BUFFER];
+  while(fgets(buf, BUFFER, fp)) {
     if(strstr(buf, "=>") == buf) gmilink(buf);
     else writebuf(buf, strlen(buf));
   }
@@ -182,9 +182,9 @@ void gmitransfer(int fd) {
 }
 
 void transfer(int fd) {
-  char buf[BUFSIZ] = { 0 };
+  char buf[BUFFER] = { 0 };
   ssize_t len;
-  while((len = read(fd, buf, BUFSIZ)) != 0) {
+  while((len = read(fd, buf, BUFFER)) != 0) {
     if(len > 0) {
       writebuf(buf, len);
     }
@@ -273,9 +273,9 @@ int cgi(char *path, char *data, char *query) {
   }
   close(fd[1]);
 
-  char buf[BUFSIZ] = { 0 };
+  char buf[BUFFER] = { 0 };
   ssize_t len;
-  while((len = read(fd[0], buf, BUFSIZ)) != 0) {
+  while((len = read(fd[0], buf, BUFFER)) != 0) {
     writebuf(buf, len);
   }
   wait(0);
@@ -292,10 +292,10 @@ int authorized() {
     return 0;
   }
 
-  char buf[BUFSIZ];
+  char buf[BUFFER];
 
   int ret = 0;
-  while(fgets(buf, BUFSIZ, f) != 0) {
+  while(fgets(buf, BUFFER, f) != 0) {
     buf[strcspn(buf, "\n")] = 0;
     if(!strcmp(buf, peer)) {
       ret = 1;
