@@ -129,6 +129,7 @@ int main(int argc, char **argv) {
   socklen_t len = sizeof(addr);
   while((sock = accept(server, (struct sockaddr *) &addr, &len)) > -1) {
     pid_t pid = fork();
+    if(pid == -1) errx(1, "fork failed");
     if(!pid) {
       close(server);
       if(tls_accept_socket(tls, &tls2, sock) < 0) exit(1);
@@ -147,7 +148,7 @@ int main(int argc, char **argv) {
       tls_close(tls2);
     } else {
       close(sock);
-      signal(SIGCHLD,SIG_IGN);
+      signal(SIGCHLD, SIG_IGN);
     }
   }
 
