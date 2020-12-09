@@ -1,17 +1,16 @@
-int secure = 1;
+int secure = 1; // try to chroot?
 
-char *root = "/var/gemini";
-char *indx = "index.gmi";
-char *logp = "tsubomi.log";
+char *root = "/var/gemini"; // root path
 
-char *crtfile = "/etc/ssl/gemini.crt";
-char *keyfile = "/etc/ssl/private/gemini.key";
+char *crtfile = "/etc/ssl/gemini.crt"; // certificate
+char *keyfile = "/etc/ssl/private/gemini.key"; // key
 
-char textmime[256] = "text/gemini";
+char text[LINE_MAX] = "text/gemini"; // plaintext mime type
 
-char *user = "gemini";
-char *group = "gemini";
+char *user = "gemini"; // setuid
+char *group = "gemini"; // setgid
 
+// domains to serve
 char *domains[] = {
   "localhost",
   0
