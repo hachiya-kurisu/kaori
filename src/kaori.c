@@ -3,18 +3,20 @@
 #define _PR_HAVE_LARGE_OFF_T
 
 #include <stdio.h>
-#include <stdlib.h>
-#include <fcntl.h>
-#include <grp.h>
-#include <pwd.h>
-#include <glob.h>
-#include <err.h>
-#include <string.h>
 #include <ctype.h>
+#include <fcntl.h>
+#include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 #include <limits.h>
 #include <signal.h>
 #include <unistd.h>
+
+#include <grp.h>
+#include <pwd.h>
+#include <err.h>
+#include <glob.h>
+
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -25,47 +27,57 @@
 #include <magic.h>
 #include <tls.h>
 
-#include "kaori.h"
+#define HEADER 1027 // 1024 + \r\n + \0
+#define BUFFER 4096
+
 #include "../config.h"
 
 char *valid = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
               "abcdefghijklmnopqrstuvwxyz0123456789"
               "-._~:/?#[]@!$&'()*+,;=%\r\n";
 
-static void version() {
-  printf("%s %s\n", NAME, VERSION);
+magic_t cookie;
+
+struct user {
+  int certified, expired;
+  char *ip, *hash;
+  char *cn, *uid, *email, *org;
+};
+struct tls *client;
+struct user u = { 0 };
+
+int dig(char *path, char *dst, char *needle) {
+  FILE *fp = fopen(path, "r");
+  if(!fp) return -1;
+  char buf[256];
+  int retval = 0;
+  while(fgets(buf, 256, fp)) {
+    buf[strcspn(buf, "\n")] = 0;
+    if(needle && !strcmp(buf, needle)) {
+      retval = 1;
+      break;
+    } else if(dst) {
+      strlcpy(dst, buf, 256);
+      break;
+    }
+  }
+  fclose(fp);
+  return retval;
 }
 
-static void usage() {
-  printf("%s\t[-hvr]\n", NAME);
-  printf("\t-h usage\n");
-  printf("\t-v version\n");
-  printf("\t-r root (%s)\n", root);
-}
-
-void setmime(char *path) {
-  FILE *f = fopen(path, "r");
-  if(!f) return;
-  fgets(textmime, 256, f);
-  while(textmime[strlen(textmime) - 1] == '\n')
-    textmime[strlen(textmime) - 1] = '\0';
-  fclose(f);
-}
-
-char *classify(char *path) {
-  char override[strlen(path) + 7];
+char *mime(char *path) {
+  char override[PATH_MAX] = { 0 };
   sprintf(override, ".%s.mime", path);
-  setmime(override);
+  if(dig(override, text, 0) != -1) return text;
 
-  char *mime = (char *) magic_file(cookie, path);
-  if(!strncmp(mime, "text/", 5)) return textmime;
-  return mime;
+  char *type = (char *) magic_file(cookie, path);
+  if(!strncmp(type, "text/", 5)) return text;
+  return type;
 }
 
 char *certattr(const char *subject, char *key) {
   char needle[LINE_MAX] = { 0 };
   sprintf(needle, "/%s=", key);
-
   char *found = strstr(subject, needle);
   if(found) {
     found += strlen(needle);
@@ -77,38 +89,10 @@ char *certattr(const char *subject, char *key) {
   return 0;
 }
 
-void checkcert() {
-  int provided = tls_peer_cert_provided(client);
-  if(!provided) return;
-
-  setenv("TSUBOMI_CERT_PROVIDED", "true", 1);
-  setenv("TSUBOMI_CLIENT", tls_peer_cert_hash(client), 1);
-
-  const char *subject = tls_peer_cert_subject(client);
-  char *uid = certattr(subject, "UID");
-  char *email = certattr(subject, "emailAddress");
-  char *organization = certattr(subject, "O");
-
-  if(uid) setenv("TSUBOMI_UID", uid, 1);
-  if(email) setenv("TSUBOMI_EMAIL", email, 1);
-  if(organization) setenv("TSUBOMI_ORGANIZATION", organization, 1);
-
-  int notbefore = tls_peer_cert_notbefore(client);
-  int notafter = tls_peer_cert_notafter(client);
-
-  time_t now = time(0);
-  if(notbefore != -1 && difftime(now, notbefore) < 0) {
-    setenv("TSUBOMI_CERT_INVALID", "Certificate is not yet valid", 1);
-  }
-  if(notafter != -1 && difftime(notafter, now) < 0) {
-    setenv("TSUBOMI_CERT_INVALID", "Certificate is no longer valid", 1);
-  }
-}
-
-void encode(char *raw, char *enc) {
-  unsigned char *s = (unsigned char *) raw;
+void encode(char *src, char *dst) {
+  unsigned char *s = (unsigned char *) src;
   if(!strlen((char *) s)) {
-    enc[0] = '\0';
+    dst[0] = '\0';
     return;
   }
   static char skip[256] = { 0 };
@@ -118,10 +102,10 @@ void encode(char *raw, char *enc) {
       skip[i] = strchr(valid, i) ? i : 0;
   }
   for(; *s; s++) {
-    if(skip[(int) *s]) sprintf(enc, "%c", skip[(int) *s]), ++enc;
+    if(skip[(int) *s]) sprintf(dst, "%c", skip[(int) *s]), ++dst;
     else {
-      sprintf(enc, "%%%02x", *s);
-      while (*++enc);
+      sprintf(dst, "%%%02x", *s);
+      while (*++dst);
     }
   }
 }
@@ -130,10 +114,8 @@ int decode(char *src, char *dst) {
   int pos = 0;
   char buf[3] = { 0 };
   unsigned int decoded;
-
   while(src && *src) {
     buf[pos] = *src;
-
     if(pos == 2) {
       if(buf[0] == '%' && isxdigit(buf[1]) && isxdigit(buf[2])) {
         sscanf(buf, "%%%2x", &decoded);
@@ -156,13 +138,12 @@ int decode(char *src, char *dst) {
   return 0;
 }
 
-void writebuf(char *buf, int len) {
+void deliver(char *buf, int len) {
   while(len > 0) {
     ssize_t ret = tls_write(client, buf, len);
     if(ret == TLS_WANT_POLLIN || ret == TLS_WANT_POLLOUT) continue;
     if(ret == -1) errx(1, "tls_write: %s", tls_error(client));
-    buf += ret;
-    len -= ret;
+    buf += ret; len -= ret;
   }
 }
 
@@ -170,55 +151,46 @@ int header(int status, char *meta) {
   char buf[HEADER];
   if(strlen(meta) > 1024) return 1;
   int len = snprintf(buf, HEADER, "%d %s\r\n", status, *meta ? meta : "");
-  if(len <= 0) return 1;
-  writebuf(buf, len);
+  deliver(buf, len);
   return 0;
 }
 
 void transfer(int fd) {
   char buf[BUFFER] = { 0 };
   ssize_t len;
-  while((len = read(fd, buf, BUFFER)) != 0) {
-    if(len > 0) {
-      writebuf(buf, len);
-    }
-  }
+  while((len = read(fd, buf, BUFFER)) != 0)
+    deliver(buf, len);
 }
 
 int servefile(char *path) {
   int fd = open(path, O_RDONLY);
   if(fd == -1) return header(51, "not found");
 
-  char *mime = classify(path);
-  header(20, mime);
+  header(20, mime(path));
   transfer(fd);
   close(fd);
 
   return 0;
 }
 
-void entry(char *path, char *name, char *mime, double size) {
+void entry(char *path, char *name, char *type, double size) {
   char *buf;
-  char encoded[strlen(path) * 3 + 1];
-  encode(path, encoded);
-  int len = asprintf(&buf, "=> %s %s [%s %.2f KB]\n",
-      encoded, name, mime, size);
-  if(len > 0) writebuf(buf, len);
+  char safe[strlen(path) * 3 + 1];
+  encode(path, safe);
+  int len = asprintf(&buf, "=> %s %s [%s %.2f KB]\n", safe, name, type, size);
+  deliver(buf, len);
 }
 
 int list(char *cwd) {
   struct stat sb = { 0 };
   stat(indx, &sb);
-
   if(S_ISREG(sb.st_mode))
     return servefile(indx);
-
-  header(20, textmime);
-
+  header(20, text);
   glob_t res;
   if(glob("*", GLOB_MARK, 0, &res)) {
     char *empty = "(*^o^*)\r\n";
-    writebuf(empty, strlen(empty));
+    deliver(empty, strlen(empty));
     return 0;
   }
   for(size_t i = 0; i < res.gl_pathc; i++) {
@@ -228,16 +200,27 @@ int list(char *cwd) {
     double size = fs.st_size / 1000.0;
     char *full;
     asprintf(&full, "%s/%s", cwd, path);
-    char *mime = classify(path);
-    entry(full, path, mime, size);
+    entry(full, path, mime(path), size);
   }
   return 0;
 }
 
 int cgi(char *path, char *data, char *query) {
-  setenv("GEMINI_PATH", path ? path : "", 1);
-  setenv("GEMINI_DATA", data ? data : "", 1);
-  setenv("GEMINI_QUERY", query ? query : "", 1);
+  setenv("GATEWAY_INTERFACE", "CGI/1.1", 1);
+  setenv("QUERY_STRING", query ? query : "", 1);
+  setenv("SCRIPT_NAME", path ? path : "", 1);
+  setenv("PATH_INFO", data ? data : "", 1);
+  // setenv("PATH_TRANSLATED", data ? data : "", 1);
+  setenv("REMOTE_ADDR", u.ip, 1);
+  setenv("REMOTE_HOST", u.ip, 1);
+  // SERVER_NAME
+  // SERVER_PORT
+  // SERVER_SOFTWARE
+  if(u.certified) {
+    setenv("AUTH_TYPE", "Certificate", 1);
+    setenv("REMOTE_USER", u.cn ? u.cn : "", 1);
+    setenv("TLS_CLIENT_HASH", u.hash, 1);
+  }
 
   int fd[2];
   pipe(fd);
@@ -256,7 +239,7 @@ int cgi(char *path, char *data, char *query) {
   char buf[BUFFER] = { 0 };
   ssize_t len;
   while((len = read(fd[0], buf, BUFFER)) != 0) {
-    writebuf(buf, len);
+    deliver(buf, len);
   }
   wait(0);
   return 0;
@@ -275,48 +258,27 @@ int fallback(char *notfound) {
 }
 
 int authorized() {
-  FILE *f = fopen(".authorized", "r");
-  if(!f) return 1;
-
-  char *peer = getenv("TSUBOMI_CLIENT");
-  if(!peer) {
-    fclose(f);
-    return 0;
-  }
-
-  char buf[BUFFER];
-
-  int ret = 0;
-  while(fgets(buf, BUFFER, f) != 0) {
-    buf[strcspn(buf, "\n")] = 0;
-    if(!strcmp(buf, peer)) {
-      ret = 1;
-      break;
-    };
-  }
-  return ret;
+  return dig(".authorized", 0, u.hash);
 }
 
-int unauthorized() {
-  if(getenv("TSUBOMI_CLIENT")) {
-    return header(61, "Certificate not authorized");
-  } else {
-    return header(60, "Client certificate required"); 
-  }
+int redirect(char *url) {
+  char safe[strlen(url) * 3 + 1];
+  encode(url, safe);
+  return header(30, safe);
 }
 
 int route(char *cwd, char *remaining, char *query) {
-  if(!authorized()) return unauthorized();
-  setmime(".mime");
+  if(!authorized())
+    return header(u.certified ? 61 : 60, "unauthorized");
+
+  dig(".mime", text, 0);
 
   if(!remaining)  {
     char *url;
     asprintf(&url, "%s/", cwd);
     if(!strlen(url)) return header(59, "bad request");
 
-    char encoded[strlen(url) * 3 + 1];
-    encode(url, encoded);
-    return header(30, encoded);
+    return redirect(url);
   }
 
   if(!strcspn(remaining, "/"))
@@ -337,6 +299,7 @@ int route(char *cwd, char *remaining, char *query) {
   }
   if(S_ISREG(sb.st_mode)) return servefile(path);
 
+  // try <path>.gmi as a last resort before giving up
   return fallback(path);
 }
 
@@ -349,9 +312,8 @@ int kaori(char *url) {
   if(url[strlen(url) - 2] != '\r' || url[strlen(url) - 1] != '\n') {
     return 1;
   }
-  checkcert();
 
-  char *domain = 0, *port = 0, *path = 0, *query = 0;
+  char *domain = 0, *port = 0, *path = 0, *rawqry = 0;
   for(int i = (int) strlen(url); i >= 0; i--)
     if(url[i] == '\n' || url[i] == '\r') url[i] = '\0';
 
@@ -363,19 +325,35 @@ int kaori(char *url) {
   }
 
   if(domain && (path = strchr(domain, '/'))) *path++ = '\0';
-  if(path && (query = strchr(path, '?'))) *query++ = '\0';
+  if(path && (rawqry = strchr(path, '?'))) *rawqry++ = '\0';
   if(domain && (port = strchr(domain, ':'))) *port++ = '\0';
 
-  if(port && strcmp(port, "1965")) return header(53, "refused");
+  if(tls_peer_cert_provided(client)) {
+    u.certified = 1;
+    u.hash = (char *) tls_peer_cert_hash(client);
 
-  char *peer = getenv("TSUBOMI_PEERADDR");
-  FILE *fp = fopen(logp, "a");
+    const char *subject = tls_peer_cert_subject(client);
+    if(subject) {
+      u.cn = certattr(subject, "CN");
+      u.uid = certattr(subject, "UID");
+      u.email = certattr(subject, "emailAddress");
+      u.org = certattr(subject, "O");
+    }
+
+    time_t now = time(0);
+
+    int first = tls_peer_cert_notbefore(client);
+    int expiry = tls_peer_cert_notafter(client);
+    if(first != -1 && difftime(now, first) < 0) u.expired = -1;
+    if(expiry != -1 && difftime(expiry, now) < 0) u.expired = 1;
+  }
+
+  FILE *fp = fopen("tsubomi.log", "a");
   if(fp) {
-    fprintf(fp, "%s:%s", peer, path);
-    if(getenv("TSUBOMI_CERT_PROVIDED")) {
-      fprintf(fp, " [%s uid:%s email:%s %s]", getenv("TSUBOMI_CLIENT"),
-          getenv("TSUBOMI_UID"), getenv("TSUBOMI_EMAIL"),
-          getenv("TSUBOMI_CERT_INVALID") ? "-" : "+");
+    fprintf(fp, "%s:%s", u.ip, path);
+    if(u.certified) {
+      fprintf(fp, " [%s uid:%s email:%s %s]",
+          u.hash, u.uid, u.email, u.expired ? "-" : "+");
     }
     fprintf(fp, "\n");
     fclose(fp);
@@ -389,11 +367,15 @@ int kaori(char *url) {
     }
   }
   if(!ok) return header(53, "refused");
+  if(port && strcmp(port, "1965")) return header(53, "refused");
 
   if(chdir(domain)) return header(59, "refused");
 
   char remaining[HEADER] = { 0 };
+  char query[HEADER] = { 0 };
+
   decode(path, remaining);
+  decode(rawqry, query);
 
   if(*remaining && *remaining == '/') return header(51, "not found");
   if(*remaining && strstr(remaining, "..")) return header(51, "not found");
@@ -404,16 +386,7 @@ int kaori(char *url) {
   return route(cwd, remaining, query);
 }
 
-int main(int argc, char **argv) {
-  int c;
-  while((c = getopt(argc, argv, "hvr:")) != -1) {
-    switch(c) {
-      case 'h': usage(); exit(0);
-      case 'v': version(); exit(0);
-      case 'r': root = optarg; break;
-    }
-  }
-
+int main() {
   cookie = magic_open(MAGIC_NONE);
   magic_load(cookie, 0);
   magic_setflags(cookie, MAGIC_MIME_TYPE);
@@ -423,7 +396,6 @@ int main(int argc, char **argv) {
 
   struct tls_config *tlsconf = 0;
   struct tls *tls = 0;
-  struct tls *tls2 = 0;
 
   tls = tls_server();
   if(!tls) errx(1, "tls_server failed");
@@ -495,30 +467,24 @@ int main(int argc, char **argv) {
     if(pid == -1) errx(1, "fork failed");
     if(!pid) {
       close(server);
-      if(tls_accept_socket(tls, &tls2, sock) < 0) exit(1);
-
-      char raw[HEADER] = { 0 };
-
-      if(tls_read(tls2, raw, HEADER) == -1)
+      if(tls_accept_socket(tls, &client, sock) < 0)
+        errx(1, "tls_accept_socket failed");
+      char url[HEADER] = { 0 };
+      if(tls_read(client, url, HEADER) == -1)
         errx(1, "tls_read failed");
-        
       char ip[INET6_ADDRSTRLEN];
       inet_ntop(AF_INET6, &addr, ip, INET6_ADDRSTRLEN);
-      setenv("TSUBOMI_PEERADDR", ip, 1);
-
-      client = tls2;
-      kaori(raw);
-      tls_close(tls2);
+      u.ip = ip;
+      kaori(url);
+      tls_close(client);
     } else {
       close(sock);
       signal(SIGCHLD, SIG_IGN);
     }
   }
-
   tls_close(tls);
   tls_free(tls);
   tls_config_free(tlsconf);
-
   return 0;
 }
 

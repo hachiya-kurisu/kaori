@@ -10,7 +10,7 @@ CFLAGS += -Os -Wall -Wextra -std=c99 -pedantic -static
 PREFIX ?= /usr/local
 MANDIR ?= /share/man
 
-LIBS += -lmagic -ltls -lssl -lz -lcrypto
+LIBS += -lmagic -ltls -lssl -lcrypto -lz
 
 all: kaori
 
@@ -25,7 +25,7 @@ install:
 	install kaori ${DESTDIR}${PREFIX}/bin/kaori
 
 generate-cert:
-	openssl genrsa -out /etc/ssl/private/gemini.key 4096
+	openssl genrsa -out /etc/ssl/private/gemini.key 2048
 	openssl req -new -key /etc/ssl/private/gemini.key \
 		-out /etc/ssl/gemini.csr
 	openssl x509 -req -days 36500 -extfile server.ext \
