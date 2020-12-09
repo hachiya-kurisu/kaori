@@ -17,16 +17,12 @@ all: kaori
 config.h:
 	cp config.def.h $@
 
-libkaori.a: src/kaori.c src/kaori.h
-	${CC} ${CFLAGS} ${LDFLAGS} -c src/kaori.c -o kaori.o
-	ar -cvqs libkaori.a kaori.o
-
-kaori: libkaori.a config.h src/main.c
-	${CC} ${CFLAGS} ${LDFLAGS} -L. -o $@ src/main.c -lkaori ${LIBS}
+kaori: config.h src/kaori.c
+	${CC} ${CFLAGS} ${LDFLAGS} -L. -o $@ src/kaori.c ${LIBS}
+	strip $@
 
 install:
 	install kaori ${DESTDIR}${PREFIX}/bin/kaori
-	install libkaori.a ${DESTDIR}${PREFIX}/lib/libkaori.a
 
 generate-cert:
 	openssl genrsa -out /etc/ssl/private/gemini.key 4096
@@ -37,7 +33,7 @@ generate-cert:
 		-out /etc/ssl/gemini.crt
 
 clean:
-	rm -f kaori kaori.o libkaori.a
+	rm -f kaori
 
 again: clean all
 

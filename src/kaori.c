@@ -5,23 +5,43 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <fcntl.h>
+#include <grp.h>
+#include <pwd.h>
 #include <glob.h>
 #include <err.h>
 #include <string.h>
 #include <ctype.h>
 #include <unistd.h>
 #include <limits.h>
+#include <signal.h>
+#include <unistd.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <sys/wait.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
 
 #include <magic.h>
 #include <tls.h>
 
 #include "kaori.h"
+#include "../config.h"
 
 char *valid = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
               "abcdefghijklmnopqrstuvwxyz0123456789"
               "-._~:/?#[]@!$&'()*+,;=%\r\n";
+
+static void version() {
+  printf("%s %s\n", NAME, VERSION);
+}
+
+static void usage() {
+  printf("%s\t[-hvr]\n", NAME);
+  printf("\t-h usage\n");
+  printf("\t-v version\n");
+  printf("\t-r root (%s)\n", root);
+}
 
 void setmime(char *path) {
   FILE *f = fopen(path, "r");
@@ -38,7 +58,7 @@ char *classify(char *path) {
   setmime(override);
 
   char *mime = (char *) magic_file(cookie, path);
-  if(strstr(mime, "text/") == mime) return textmime;
+  if(!strncmp(mime, "text/", 5)) return textmime;
   return mime;
 }
 
@@ -155,32 +175,6 @@ int header(int status, char *meta) {
   return 0;
 }
 
-void gmilink(char *buf) {
-  char *p = buf;
-  strsep(&p, " \t");
-  char *link = strsep(&p, " \t\r\n");
-  char *text = p ? strsep(&p, "\r\n") : "";
-  char encoded[strlen(link) * 3 + 1];
-  encode(link, encoded);
-  char line[LINE_MAX];
-  if(text) {
-    snprintf(line, LINE_MAX, "=> %s %s\n", encoded, text);
-  } else {
-    snprintf(line, LINE_MAX, "=> %s\n", encoded);
-  }
-  writebuf(line, strlen(line));
-}
-
-void gmitransfer(int fd) {
-  FILE *fp = fdopen(fd, "r");
-  char buf[BUFFER];
-  while(fgets(buf, BUFFER, fp)) {
-    if(strstr(buf, "=>") == buf) gmilink(buf);
-    else writebuf(buf, strlen(buf));
-  }
-  fclose(fp);
-}
-
 void transfer(int fd) {
   char buf[BUFFER] = { 0 };
   ssize_t len;
@@ -191,28 +185,14 @@ void transfer(int fd) {
   }
 }
 
-void footer() {
-  int fd = open(".footer.gmi", O_RDONLY);
-  if(fd == -1) return;
-  transfer(fd);
-  close(fd);
-}
-
 int servefile(char *path) {
   int fd = open(path, O_RDONLY);
   if(fd == -1) return header(51, "not found");
 
   char *mime = classify(path);
-
-  int isgemini = strstr(mime, "text/gemini") == mime;
-
   header(20, mime);
-
-  isgemini ? gmitransfer(fd) : transfer(fd);
-
+  transfer(fd);
   close(fd);
-
-  if(strstr(mime, "text/gemini") == mime) footer();
 
   return 0;
 }
@@ -226,11 +206,11 @@ void entry(char *path, char *name, char *mime, double size) {
   if(len > 0) writebuf(buf, len);
 }
 
-int list(char *current) {
-  struct stat ifs = { 0 };
-  stat(indx, &ifs);
+int list(char *cwd) {
+  struct stat sb = { 0 };
+  stat(indx, &sb);
 
-  if(S_ISREG(ifs.st_mode))
+  if(S_ISREG(sb.st_mode))
     return servefile(indx);
 
   header(20, textmime);
@@ -247,7 +227,7 @@ int list(char *current) {
     stat(path, &fs);
     double size = fs.st_size / 1000.0;
     char *full;
-    asprintf(&full, "%s/%s", current, path);
+    asprintf(&full, "%s/%s", cwd, path);
     char *mime = classify(path);
     entry(full, path, mime, size);
   }
@@ -282,6 +262,18 @@ int cgi(char *path, char *data, char *query) {
   return 0;
 }
 
+int fallback(char *notfound) {
+  char path[LINE_MAX];
+  sprintf(path, "%s.gmi", notfound);
+  struct stat sb = { 0 };
+  stat(path, &sb);
+
+  if(S_ISREG(sb.st_mode))
+    return servefile(path);
+
+  return header(51, "not found");
+}
+
 int authorized() {
   FILE *f = fopen(".authorized", "r");
   if(!f) return 1;
@@ -313,10 +305,13 @@ int unauthorized() {
   }
 }
 
-int serve(char *current, char *remaining, char *query) {
+int route(char *cwd, char *remaining, char *query) {
+  if(!authorized()) return unauthorized();
+  setmime(".mime");
+
   if(!remaining)  {
     char *url;
-    asprintf(&url, "%s/", current);
+    asprintf(&url, "%s/", cwd);
     if(!strlen(url)) return header(59, "bad request");
 
     char encoded[strlen(url) * 3 + 1];
@@ -325,57 +320,43 @@ int serve(char *current, char *remaining, char *query) {
   }
 
   if(!strcspn(remaining, "/"))
-    return list(current);
+    return list(cwd);
 
-  char *raw = strsep(&remaining, "/");
-  char path[strlen(raw)];
-  decode(raw, path);
+  char *path = strsep(&remaining, "/");
 
-  struct stat fs = { 0 };
-  stat(path, &fs);
+  struct stat sb = { 0 };
+  stat(path, &sb);
 
-  if(S_ISREG(fs.st_mode) && fs.st_mode & S_IXOTH)
+  if(S_ISREG(sb.st_mode) && sb.st_mode & S_IXOTH)
     return cgi(path, remaining, query);
 
-  if(S_ISDIR(fs.st_mode)) {
-    sprintf(current + strlen(current), "/%s", path);
+  if(S_ISDIR(sb.st_mode)) {
+    sprintf(cwd + strlen(cwd), "/%s", path);
     if(chdir(path)) return header(51, "not found");
-    if(!authorized()) return unauthorized();
-    setmime(".mime");
-    return serve(current, remaining, query);
+    return route(cwd, remaining, query);
   }
-  if(S_ISREG(fs.st_mode)) return servefile(path);
+  if(S_ISREG(sb.st_mode)) return servefile(path);
 
-  char inferred[LINE_MAX];
-  sprintf(inferred, "%s.gmi", path);
-  memset(&fs, 0, sizeof(fs)); 
-  stat(inferred, &fs);
-  if(S_ISREG(fs.st_mode)) return servefile(inferred);
-
-  return header(51, "not found");
+  return fallback(path);
 }
 
-int kaori(char *raw) {
-  char url[HEADER] = { 0 };
+int kaori(char *url) {
+  size_t eof = strspn(url, valid);
+  if(url[eof]) return header(59, "bad request");
 
-  size_t eof = strspn(raw, valid);
-  if(raw[eof]) return header(59, "bad request");
-
-  if(strlen(raw) >= HEADER) return header(59, "bad request");
-  if(strlen(raw) <= 2) return header(59, "bad request");
-  if(raw[strlen(raw) - 2] != '\r' || raw[strlen(raw) - 1] != '\n') {
+  if(strlen(url) >= HEADER) return header(59, "bad request");
+  if(strlen(url) <= 2) return header(59, "bad request");
+  if(url[strlen(url) - 2] != '\r' || url[strlen(url) - 1] != '\n') {
     return 1;
   }
   checkcert();
 
   char *domain = 0, *port = 0, *path = 0, *query = 0;
-  for(int i = (int) strlen(raw); i >= 0; i--)
-    if(raw[i] == '\n' || raw[i] == '\r') raw[i] = '\0';
-
-  sprintf(url, "%s", raw);
+  for(int i = (int) strlen(url); i >= 0; i--)
+    if(url[i] == '\n' || url[i] == '\r') url[i] = '\0';
 
   domain = url;
-  if(strstr(domain, "gemini://") == domain) {
+  if(!strncmp(domain, "gemini://", 9)) {
     domain += 9;
   } else {
     return header(59, "bad request");
@@ -390,7 +371,7 @@ int kaori(char *raw) {
   char *peer = getenv("TSUBOMI_PEERADDR");
   FILE *fp = fopen(logp, "a");
   if(fp) {
-    fprintf(fp, "%s:%s", peer, raw);
+    fprintf(fp, "%s:%s", peer, path);
     if(getenv("TSUBOMI_CERT_PROVIDED")) {
       fprintf(fp, " [%s uid:%s email:%s %s]", getenv("TSUBOMI_CLIENT"),
           getenv("TSUBOMI_UID"), getenv("TSUBOMI_EMAIL"),
@@ -402,7 +383,7 @@ int kaori(char *raw) {
 
   int ok = 0;
   for(int i = 0; domains[i]; i++) {
-    if(strstr(domain, domains[i]) == domain) {
+    if(!strncmp(domain, domains[i], strlen(domain))) {
       ok = 1;
       break;
     }
@@ -411,15 +392,133 @@ int kaori(char *raw) {
 
   if(chdir(domain)) return header(59, "refused");
 
-  if(path && *path == '/') return header(51, "not found");
-  if(path && strstr(path, "..")) return header(51, "not found");
-  if(path && strstr(path, "//")) return header(51, "not found");
+  char remaining[HEADER] = { 0 };
+  decode(path, remaining);
 
-  char current[HEADER] = "";
+  if(*remaining && *remaining == '/') return header(51, "not found");
+  if(*remaining && strstr(remaining, "..")) return header(51, "not found");
+  if(*remaining && strstr(remaining, "//")) return header(51, "not found");
 
-  if(!authorized()) return unauthorized();
-  setmime(".mime");
+  char cwd[HEADER] = "";
 
-  return serve(current, path, query);
+  return route(cwd, remaining, query);
+}
+
+int main(int argc, char **argv) {
+  int c;
+  while((c = getopt(argc, argv, "hvr:")) != -1) {
+    switch(c) {
+      case 'h': usage(); exit(0);
+      case 'v': version(); exit(0);
+      case 'r': root = optarg; break;
+    }
+  }
+
+  cookie = magic_open(MAGIC_NONE);
+  magic_load(cookie, 0);
+  magic_setflags(cookie, MAGIC_MIME_TYPE);
+
+  struct sockaddr_in6 addr;
+  int server = socket(AF_INET6, SOCK_STREAM, 0);
+
+  struct tls_config *tlsconf = 0;
+  struct tls *tls = 0;
+  struct tls *tls2 = 0;
+
+  tls = tls_server();
+  if(!tls) errx(1, "tls_server failed");
+
+  tlsconf = tls_config_new();
+  if(!tlsconf) errx(1, "tls_config_new failed");
+
+  if(tls_config_set_session_lifetime(tlsconf, 7200) == -1)
+    errx(1, "tls_conf_set_session_lifetime failed");
+  tls_config_verify_client_optional(tlsconf);
+  tls_config_insecure_noverifycert(tlsconf);
+
+  if(tls_config_set_key_file(tlsconf, keyfile) < 0)
+    errx(1, "tls_config_set_key_file failed");
+  if(tls_config_set_cert_file(tlsconf, crtfile) < 0)
+    errx(1, "tls_config_set_cert_file failed");
+
+  if(tls_configure(tls, tlsconf) < 0)
+    errx(1, "tls_configure failed");
+
+  bzero(&addr, sizeof(addr));
+
+  daemon(0, 0);
+
+  struct group *grp = { 0 };
+  struct passwd *pwd = { 0 };
+
+  if(group && !(grp = getgrnam(group)))
+    errx(1, "getgrnam: group %s not found", group);
+
+  if(user && !(pwd = getpwnam(user)))
+    errx(1, "getpwnam: user %s not found", user);
+
+  if(secure) {
+    if(chroot(root)) errx(1, "chroot failed");
+    if(chdir("/")) errx(1, "chdir failed (after chroot)");
+  } else {
+    if(chdir(root)) errx(1, "chdir failed");
+  }
+
+  if(group && grp && setgid(grp->gr_gid)) errx(1, "setgid failed");
+  if(user && pwd && setuid(pwd->pw_uid)) errx(1, "setuid failed");
+
+  if(pledge("stdio inet proc dns exec rpath wpath cpath getpw unix", 0))
+    errx(1, "pledge failed");
+
+  addr.sin6_family = AF_INET6;
+  addr.sin6_port = htons(1965);
+  addr.sin6_addr = in6addr_any;
+
+  struct timeval timeout;
+  timeout.tv_sec = 10;
+  timeout.tv_usec = 0;
+
+  int opt = 1;
+  setsockopt(server, SOL_SOCKET, SO_REUSEADDR, &opt, 4);
+  setsockopt(server, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+  setsockopt(server, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+
+  if(bind(server, (struct sockaddr *) &addr, (socklen_t) sizeof(addr)))
+    errx(1, "bind failed");
+
+  listen(server, 10);
+
+  int sock;
+  socklen_t len = sizeof(addr);
+  while((sock = accept(server, (struct sockaddr *) &addr, &len)) > -1) {
+    pid_t pid = fork();
+    if(pid == -1) errx(1, "fork failed");
+    if(!pid) {
+      close(server);
+      if(tls_accept_socket(tls, &tls2, sock) < 0) exit(1);
+
+      char raw[HEADER] = { 0 };
+
+      if(tls_read(tls2, raw, HEADER) == -1)
+        errx(1, "tls_read failed");
+        
+      char ip[INET6_ADDRSTRLEN];
+      inet_ntop(AF_INET6, &addr, ip, INET6_ADDRSTRLEN);
+      setenv("TSUBOMI_PEERADDR", ip, 1);
+
+      client = tls2;
+      kaori(raw);
+      tls_close(tls2);
+    } else {
+      close(sock);
+      signal(SIGCHLD, SIG_IGN);
+    }
+  }
+
+  tls_close(tls);
+  tls_free(tls);
+  tls_config_free(tlsconf);
+
+  return 0;
 }
 

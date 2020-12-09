@@ -1,12 +1,5 @@
 # kaori
 
-personal gemini server
-no tls support, do some socat/stunnel
-
-## build and install
-
-$ make
-$ make install
-
-$ socat openssl-listen:1965,reuseaddr,fork,cert=/etc/ssl/tako.jp.crt,key=/etc/ssl/private/tako.jp.key,verify=0 exec:./tsubomi
+this is the comfy gemini server you may or may not need.
+all i know for sure is that it's the gemini server i want!
 
