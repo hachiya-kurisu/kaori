@@ -41,6 +41,9 @@ struct request {
   char cn[128], uid[128], email[128], org[128];
 };
 
+int cgi(struct request *, char *);
+int file(struct request *, char *, int);
+
 int dig(char *path, char *dst, char *needle) {
   FILE *fp = fopen(path, "r");
   if(!fp) return -1;
@@ -158,6 +161,31 @@ int header(struct request *req, int status, char *meta) {
   return 0;
 }
 
+void include(struct request *req, char *buf) {
+  buf += strspn(buf, " \t");
+  buf[strcspn(buf, "\r\n")] = 0;
+  struct stat sb = { 0 };
+  stat(buf, &sb);
+  if(S_ISREG(sb.st_mode) && sb.st_mode & S_IXOTH) {
+    cgi(req, buf);
+  } else if(S_ISREG(sb.st_mode)) {
+    file(req, buf, 0);
+  }
+}
+
+void process(struct request *req, int fd) {
+  FILE *fp = fdopen(fd, "r");
+  if(!fp) return;
+  char buf[LINE_MAX];
+  while(fgets(buf, LINE_MAX, fp)) {
+    if(!strncmp(buf, "$>", 2) && strlen(buf) > 2) {
+      include(req, &buf[2]);
+    } else {
+      deliver(req->tls, buf, strlen(buf));
+    }
+  }
+}
+
 void transfer(struct request *req, int fd) {
   char buf[BUFFER] = { 0 };
   ssize_t len;
@@ -165,10 +193,12 @@ void transfer(struct request *req, int fd) {
     deliver(req->tls, buf, len);
 }
 
-int file(struct request *req, char *path) {
+int file(struct request *req, char *path, int hdr) {
   int fd = open(path, O_RDONLY);
-  if(fd == -1) return header(req, 51, "not found");
-  header(req, 20, mime(path));
+  if(fd == -1) return hdr ? header(req, 51, "not found") : 1;
+  char *type = mime(path);
+  if(hdr) header(req, 20, type);
+  (wild && !strncmp(type, "text/", 5)) ? process(req, fd) : transfer(req, fd);
   transfer(req, fd);
   close(fd);
   return 0;
@@ -193,7 +223,7 @@ int ls(struct request *req) {
   struct stat sb = { 0 };
   stat("index.gmi", &sb);
   if(S_ISREG(sb.st_mode))
-    return file(req, "index.gmi");
+    return file(req, "index.gmi", 1);
   header(req, 20, text);
   glob_t res;
   if(glob("*", GLOB_MARK, 0, &res)) {
@@ -249,8 +279,7 @@ int fallback(struct request *req, char *notfound) {
   sprintf(path, "%s.gmi", notfound);
   struct stat sb = { 0 };
   stat(path, &sb);
-
-  return S_ISREG(sb.st_mode) ? file(req, path) : header(req, 51, "not found");
+  return S_ISREG(sb.st_mode) ? file(req, path, 1) : header(req, 51, "not found");
 }
 
 int route(struct request *req) {
@@ -271,14 +300,14 @@ int route(struct request *req) {
   char *path = strsep(&req->path, "/");
   struct stat sb = { 0 };
   stat(path, &sb);
-  if(S_ISREG(sb.st_mode) && sb.st_mode & S_IXOTH) return cgi(req, path);
+  if(S_ISREG(sb.st_mode) && sb.st_mode & S_IXOTH) 
+    return cgi(req, path);
   if(S_ISDIR(sb.st_mode)) {
     sprintf(req->cwd + strlen(req->cwd), "/%s", path);
     if(chdir(path)) return header(req, 51, "not found");
     return route(req);
   }
-  if(S_ISREG(sb.st_mode)) return file(req, path);
-  return fallback(req, path);
+  return S_ISREG(sb.st_mode) ? file(req, path, 1) : fallback(req, path);
 }
 
 int kaori(struct request *req, char *url) {
