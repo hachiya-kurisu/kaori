@@ -21,7 +21,7 @@
 #include <magic.h>
 #include <tls.h>
 
-#define HEADER 1027 // 1024 + \r\n + \0
+#define HEADER 1027
 #define BUFFER 4096
 
 #include "../config.h"
