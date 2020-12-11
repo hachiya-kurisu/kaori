@@ -24,6 +24,10 @@
 #define HEADER 1027
 #define BUFFER 4096
 
+struct host {
+  char *domain, *root;
+};
+
 #include "../config.h"
 
 magic_t cookie;
@@ -43,6 +47,17 @@ struct request {
 
 int cgi(struct request *, char *);
 int file(struct request *, char *, int);
+
+int setdomain(char *domain) {
+  struct host *host = hosts;
+  while(host->domain) {
+    if(!strcmp(domain, host->domain)) {
+      return chdir(host->root) ? 0 : 1;
+    }
+    host++;
+  }
+  return 0;
+}
 
 int dig(char *path, char *dst, char *needle) {
   FILE *fp = fopen(path, "r");
@@ -70,9 +85,14 @@ void logrequest(struct request *req, char *url) {
   char dt[BUFFER] = { 0 };
   localtime_r(&req->time, &tm);
   strftime(dt, BUFFER, "%Y-%m-%d %H:%M:%S %z", &tm);
-  fprintf(fp, "[%s] \"%s\" %s", dt, url, req->ip);
-  if(req->certified) fprintf(fp, " [%s uid:%s]", req->hash, req->uid);
-  fprintf(fp, "\n");
+  if(flock(fileno(fp), LOCK_EX)) errx(1, "flock failed: LOCK_EX");
+  if(req->certified) {
+    fprintf(fp, "[%s] \"%s\" %s {%s CN:%s}\n",
+        dt, url, req->ip, req->hash, req->uid);
+  } else {
+    fprintf(fp, "[%s] \"%s\" %s\n", dt, url, req->ip);
+  }
+  if(flock(fileno(fp), LOCK_UN)) errx(1, "flock failed: LOCK_UN");
   fclose(fp);
 }
 
@@ -323,6 +343,22 @@ int kaori(struct request *req, char *url) {
   url[strcspn(url, "\r\n")] = 0;
 
   req->time = time(0);
+  if(tls_peer_cert_provided(req->tls)) {
+    req->certified = 1;
+    req->hash = (char *) tls_peer_cert_hash(req->tls);
+
+    const char *subject = tls_peer_cert_subject(req->tls);
+    if(subject) {
+      attr(subject, "CN", req->cn);
+      attr(subject, "UID", req->uid);
+      attr(subject, "emailAddress", req->email);
+      attr(subject, "O", req->org);
+    }
+    int first = tls_peer_cert_notbefore(req->tls);
+    int expiry = tls_peer_cert_notafter(req->tls);
+    if(first != -1 && difftime(req->time, first) < 0) req->expired = -1;
+    if(expiry != -1 && difftime(expiry, req->time) < 0) req->expired = 1;
+  }
   logrequest(req, url);
 
   char *scheme = strsep(&url, ":");
@@ -341,33 +377,7 @@ int kaori(struct request *req, char *url) {
   if(domain && (port = strchr(domain, ':'))) *port++ = '\0';
   if(port && strcmp(port, "1965")) return header(req, 53, "refused");
 
-  if(tls_peer_cert_provided(req->tls)) {
-    req->certified = 1;
-    req->hash = (char *) tls_peer_cert_hash(req->tls);
-
-    const char *subject = tls_peer_cert_subject(req->tls);
-    if(subject) {
-      attr(subject, "CN", req->cn);
-      attr(subject, "UID", req->uid);
-      attr(subject, "emailAddress", req->email);
-      attr(subject, "O", req->org);
-    }
-    int first = tls_peer_cert_notbefore(req->tls);
-    int expiry = tls_peer_cert_notafter(req->tls);
-    if(first != -1 && difftime(req->time, first) < 0) req->expired = -1;
-    if(expiry != -1 && difftime(expiry, req->time) < 0) req->expired = 1;
-  }
-
-  int ok = 0;
-  for(int i = 0; domains[i]; i++) {
-    if(!strncmp(domain, domains[i], strlen(domain))) {
-      ok = 1;
-      break;
-    }
-  }
-  if(!ok) return header(req, 53, domain);
-
-  if(chdir(domain)) return header(req, 59, domain);
+  if(!setdomain(domain)) return header(req, 53, "refused");
 
   char cwd[HEADER] = "";
   char path[HEADER] = { 0 };
@@ -403,9 +413,12 @@ int main() {
     errx(1, "tls_config_set_key_file failed");
   if(tls_config_set_cert_file(tlsconf, crtfile) < 0)
     errx(1, "tls_config_set_cert_file failed");
+
+  tls_config_verify_client_optional(tlsconf);
+  tls_config_insecure_noverifycert(tlsconf);
+
   if(tls_configure(tls, tlsconf) < 0)
     errx(1, "tls_configure failed");
-  tls_config_verify_client_optional(tlsconf);
 
   struct group *grp = { 0 };
   struct passwd *pwd = { 0 };
@@ -424,7 +437,7 @@ int main() {
   if(group && grp && setgid(grp->gr_gid)) errx(1, "setgid failed");
   if(user && pwd && setuid(pwd->pw_uid)) errx(1, "setuid failed");
 
-  if(pledge("stdio inet proc dns exec rpath wpath cpath getpw unix", 0))
+  if(pledge("stdio inet proc dns exec rpath wpath cpath getpw unix flock", 0))
     errx(1, "pledge failed");
 
   bzero(&addr, sizeof(addr));
