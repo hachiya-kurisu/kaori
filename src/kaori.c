@@ -33,9 +33,9 @@ const char *valid = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 struct request {
   struct tls *tls;
+  time_t time;
   char url[HEADER];
   char *cwd, *path, *query;
-
   int certified, expired;
   char *ip, *hash;
   char cn[128], uid[128], email[128], org[128];
@@ -64,12 +64,14 @@ int dig(char *path, char *dst, char *needle) {
 }
 
 void logrequest(struct request *req, char *url) {
-  FILE *fp = fopen("tsubomi.log", "a");
+  FILE *fp = fopen("kaori.log", "a");
   if(!fp) return;
-  fprintf(fp, "%s:%s", req->ip, url);
-  if(req->certified) {
-    fprintf(fp, " [%s uid:%s]", req->hash, req->uid);
-  }
+  struct tm tm = { 0 };
+  char dt[BUFFER] = { 0 };
+  localtime_r(&req->time, &tm);
+  strftime(dt, BUFFER, "%Y-%m-%d %H:%M:%S %z", &tm);
+  fprintf(fp, "[%s] \"%s\" %s", dt, url, req->ip);
+  if(req->certified) fprintf(fp, " [%s uid:%s]", req->hash, req->uid);
   fprintf(fp, "\n");
   fclose(fp);
 }
@@ -320,6 +322,7 @@ int kaori(struct request *req, char *url) {
     return 1;
   url[strcspn(url, "\r\n")] = 0;
 
+  req->time = time(0);
   logrequest(req, url);
 
   char *scheme = strsep(&url, ":");
@@ -349,11 +352,10 @@ int kaori(struct request *req, char *url) {
       attr(subject, "emailAddress", req->email);
       attr(subject, "O", req->org);
     }
-    time_t now = time(0);
     int first = tls_peer_cert_notbefore(req->tls);
     int expiry = tls_peer_cert_notafter(req->tls);
-    if(first != -1 && difftime(now, first) < 0) req->expired = -1;
-    if(expiry != -1 && difftime(expiry, now) < 0) req->expired = 1;
+    if(first != -1 && difftime(req->time, first) < 0) req->expired = -1;
+    if(expiry != -1 && difftime(expiry, req->time) < 0) req->expired = 1;
   }
 
   int ok = 0;
@@ -386,6 +388,7 @@ int main() {
   cookie = magic_open(MAGIC_NONE);
   magic_load(cookie, 0);
   magic_setflags(cookie, MAGIC_MIME_TYPE);
+  tzset();
 
   struct sockaddr_in6 addr;
   int server = socket(AF_INET6, SOCK_STREAM, 0);

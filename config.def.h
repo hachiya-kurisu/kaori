@@ -1,4 +1,5 @@
 int secure = 1; // try to chroot?
+int wild = 1; // wild mode
 
 char *root = "/var/gemini"; // root path
 
@@ -11,8 +12,5 @@ char *user = "gemini"; // setuid
 char *group = "gemini"; // setgid
 
 // domains to serve
-char *domains[] = {
-  "localhost",
-  0
-};
+char *domains[] = { "localhost", 0 };
 
