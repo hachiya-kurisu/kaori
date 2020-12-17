@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <limits.h>
 #include <signal.h>
+#include <syslog.h>
 #include <grp.h>
 #include <pwd.h>
 #include <err.h>
@@ -40,13 +41,13 @@ struct request {
   time_t time;
   char url[HEADER];
   char *cwd, *path, *query;
-  int certified, expired;
+  int certified, expired, ongoing;
   char *ip, *hash;
   char cn[128], uid[128], email[128], org[128];
 };
 
 int cgi(struct request *, char *);
-int file(struct request *, char *, int);
+int file(struct request *, char *);
 
 int setdomain(char *domain) {
   struct host *host = hosts;
@@ -76,24 +77,6 @@ int dig(char *path, char *dst, char *needle) {
   }
   fclose(fp);
   return retval;
-}
-
-void logrequest(struct request *req, char *url) {
-  FILE *fp = fopen("kaori.log", "a");
-  if(!fp) return;
-  struct tm tm = { 0 };
-  char dt[BUFFER] = { 0 };
-  localtime_r(&req->time, &tm);
-  strftime(dt, BUFFER, "%Y-%m-%d %H:%M:%S %z", &tm);
-  if(flock(fileno(fp), LOCK_EX)) errx(1, "flock failed: LOCK_EX");
-  if(req->certified) {
-    fprintf(fp, "[%s] \"%s\" %s {%s CN:%s}\n",
-        dt, url, req->ip, req->hash, req->uid);
-  } else {
-    fprintf(fp, "[%s] \"%s\" %s\n", dt, url, req->ip);
-  }
-  if(flock(fileno(fp), LOCK_UN)) errx(1, "flock failed: LOCK_UN");
-  fclose(fp);
 }
 
 char *mime(char *path) {
@@ -176,10 +159,12 @@ void deliver(struct tls *tls, char *buf, int len) {
 }
 
 int header(struct request *req, int status, char *meta) {
-  char buf[HEADER];
+  if(req->ongoing) return 1;
   if(strlen(meta) > 1024) return 1;
+  char buf[HEADER];
   int len = snprintf(buf, HEADER, "%d %s\r\n", status, *meta ? meta : "");
   deliver(req->tls, buf, len);
+  req->ongoing = 1;
   return 0;
 }
 
@@ -191,7 +176,7 @@ void include(struct request *req, char *buf) {
   if(S_ISREG(sb.st_mode) && sb.st_mode & S_IXOTH) {
     cgi(req, buf);
   } else if(S_ISREG(sb.st_mode)) {
-    file(req, buf, 0);
+    file(req, buf);
   }
 }
 
@@ -215,11 +200,11 @@ void transfer(struct request *req, int fd) {
     deliver(req->tls, buf, len);
 }
 
-int file(struct request *req, char *path, int hdr) {
+int file(struct request *req, char *path) {
   int fd = open(path, O_RDONLY);
-  if(fd == -1) return hdr ? header(req, 51, "not found") : 1;
+  if(fd == -1) return header(req, 51, "not found");
   char *type = mime(path);
-  if(hdr) header(req, 20, type);
+  header(req, 20, type);
   (wild && !strncmp(type, "text/", 5)) ? process(req, fd) : transfer(req, fd);
   transfer(req, fd);
   close(fd);
@@ -245,7 +230,7 @@ int ls(struct request *req) {
   struct stat sb = { 0 };
   stat("index.gmi", &sb);
   if(S_ISREG(sb.st_mode))
-    return file(req, "index.gmi", 1);
+    return file(req, "index.gmi");
   header(req, 20, text);
   glob_t res;
   if(glob("*", GLOB_MARK, 0, &res)) {
@@ -301,7 +286,7 @@ int fallback(struct request *req, char *notfound) {
   sprintf(path, "%s.gmi", notfound);
   struct stat sb = { 0 };
   stat(path, &sb);
-  return S_ISREG(sb.st_mode) ? file(req, path, 1) : header(req, 51, "not found");
+  return S_ISREG(sb.st_mode) ? file(req, path) : header(req, 51, "not found");
 }
 
 int route(struct request *req) {
@@ -329,7 +314,7 @@ int route(struct request *req) {
     if(chdir(path)) return header(req, 51, "not found");
     return route(req);
   }
-  return S_ISREG(sb.st_mode) ? file(req, path, 1) : fallback(req, path);
+  return S_ISREG(sb.st_mode) ? file(req, path) : fallback(req, path);
 }
 
 int kaori(struct request *req, char *url) {
@@ -359,7 +344,11 @@ int kaori(struct request *req, char *url) {
     if(first != -1 && difftime(req->time, first) < 0) req->expired = -1;
     if(expiry != -1 && difftime(expiry, req->time) < 0) req->expired = 1;
   }
-  logrequest(req, url);
+  if(req->certified) {
+    syslog(LOG_INFO, "%s %s {%s CN:%s}", url, req->ip, req->hash, req->uid);
+  } else {
+    syslog(LOG_INFO, "%s %s", url, req->ip);
+  }
 
   char *scheme = strsep(&url, ":");
   if(!url || strncmp(url, "//", 2)) return header(req, 59, "bad request");
@@ -434,11 +423,14 @@ int main() {
   if(secure && chroot(root)) errx(1, "chroot failed");
   if(chdir(secure ? "/" : root)) errx(1, "chdir failed");
 
+  openlog(0, LOG_NDELAY, LOG_DAEMON);
+
   if(group && grp && setgid(grp->gr_gid)) errx(1, "setgid failed");
   if(user && pwd && setuid(pwd->pw_uid)) errx(1, "setuid failed");
 
   if(pledge("stdio inet proc dns exec rpath wpath cpath getpw unix flock", 0))
     errx(1, "pledge failed");
+
 
   bzero(&addr, sizeof(addr));
   addr.sin6_family = AF_INET6;
@@ -486,6 +478,7 @@ int main() {
   tls_close(tls);
   tls_free(tls);
   tls_config_free(tlsconf);
+  closelog();
   return 0;
 }
 

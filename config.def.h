@@ -12,5 +12,8 @@ char *user = "gemini"; // setuid
 char *group = "gemini"; // setgid
 
 // domains to serve
-char *domains[] = { "localhost", 0 };
+struct host hosts[] = {
+  { "localhost", "gmidocs" },
+  { 0 }
+};
 
