@@ -277,6 +277,7 @@ int cgi(struct request *req, char *path) {
   while((len = read(fd[0], buf, BUFFER)) != 0) {
     deliver(req->tls, buf, len);
   }
+  kill(pid, SIGKILL);
   wait(0);
   return 0;
 }
