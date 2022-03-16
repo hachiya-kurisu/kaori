@@ -86,6 +86,10 @@ char *mime(char *path) {
 
   char *type = (char *) magic_file(cookie, path);
   if(!strncmp(type, "text/", 5)) return text;
+  syslog(LOG_INFO, "it's a <%s>", type);
+  // what the fuck, libmagic
+  if (!strncmp(type, "audio/mpegapplication/octet-stream", 34))
+    return "audio/mpeg";
   return type;
 }
 
@@ -385,9 +389,9 @@ int kaori(struct request *req, char *url) {
 }
 
 int main() {
-  cookie = magic_open(MAGIC_NONE);
+  cookie = magic_open(MAGIC_MIME_TYPE);
   magic_load(cookie, 0);
-  magic_setflags(cookie, MAGIC_MIME_TYPE);
+  // magic_setflags(cookie, MAGIC_MIME_TYPE);
   tzset();
 
   struct sockaddr_in6 addr;
