@@ -4,6 +4,7 @@
 
 #include <stdio.h>
 #include <ctype.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
@@ -86,10 +87,6 @@ char *mime(char *path) {
 
   char *type = (char *) magic_file(cookie, path);
   if(!strncmp(type, "text/", 5)) return text;
-  syslog(LOG_INFO, "it's a <%s>", type);
-  // what the fuck, libmagic
-  if (!strncmp(type, "audio/mpegapplication/octet-stream", 34))
-    return "audio/mpeg";
   return type;
 }
 
@@ -257,6 +254,7 @@ int cgi(struct request *req, char *path) {
   setenv("REMOTE_HOST", req->ip, 1);
   setenv("SERVER_PORT", "1965", 1);
   setenv("SERVER_SOFTWARE", "槇村香/202012", 1);
+  setenv("SERVER_PROTOCOL", "gemini", 1);
   if(req->certified) {
     setenv("AUTH_TYPE", "Certificate", 1);
     setenv("REMOTE_USER", *req->cn ? req->cn : "", 1);
@@ -391,7 +389,6 @@ int kaori(struct request *req, char *url) {
 int main() {
   cookie = magic_open(MAGIC_MIME_TYPE);
   magic_load(cookie, 0);
-  // magic_setflags(cookie, MAGIC_MIME_TYPE);
   tzset();
 
   struct sockaddr_in6 addr;
@@ -436,11 +433,10 @@ int main() {
   if(pledge("stdio inet proc dns exec rpath wpath cpath getpw unix flock", 0))
     errx(1, "pledge failed");
 
-
   bzero(&addr, sizeof(addr));
   addr.sin6_family = AF_INET6;
   addr.sin6_port = htons(1965);
-  addr.sin6_addr = in6addr_any;
+  addr.sin6_addr = in6addr_loopback;
 
   struct timeval timeout;
   timeout.tv_sec = 10;
@@ -451,9 +447,9 @@ int main() {
   setsockopt(server, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
 
   if(bind(server, (struct sockaddr *) &addr, (socklen_t) sizeof(addr)))
-    errx(1, "bind failed");
+    errx(1, "bind failed %d", errno);
 
-  listen(server, 10);
+  listen(server, 32);
 
   int sock;
   socklen_t len = sizeof(addr);
