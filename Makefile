@@ -5,7 +5,7 @@ OS != uname -s
 
 CFLAGS += -DVERSION=\"${VERSION}\"
 CFLAGS += -DNAME=\"kaori\"
-CFLAGS += -Os -Wall -Wextra -std=c99 -pedantic -static
+CFLAGS += -Wall -Wextra -std=c99 -pedantic -static
 
 PREFIX ?= /usr/local
 MANDIR ?= /share/man
@@ -28,7 +28,7 @@ cert:
 	openssl genrsa -out /etc/ssl/private/gemini.key 2048
 	openssl req -new -key /etc/ssl/private/gemini.key \
 		-out /etc/ssl/gemini.csr
-	openssl x509 -req -days 2914283 -extfile server.ext \
+	openssl x509 -req -days 2500000 -extfile server.ext \
 		-in /etc/ssl/gemini.csr -signkey /etc/ssl/private/gemini.key \
 		-out /etc/ssl/gemini.crt
 

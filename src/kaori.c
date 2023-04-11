@@ -82,7 +82,7 @@ int dig(char *path, char *dst, char *needle) {
 
 char *mime(char *path) {
   char override[PATH_MAX] = { 0 };
-  sprintf(override, ".%s.mime", path);
+  snprintf(override, PATH_MAX, ".%s.mime", path);
   if(dig(override, text, 0) != -1) return text;
 
   char *type = (char *) magic_file(cookie, path);
@@ -92,7 +92,7 @@ char *mime(char *path) {
 
 void attr(const char *subject, char *key, char *dst) {
   char needle[128] = { 0 };
-  sprintf(needle, "/%s=", key);
+  snprintf(needle, 128, "/%s=", key);
   char *found = strstr(subject, needle);
   if(found) {
     found += strlen(needle);
@@ -114,9 +114,9 @@ void encode(char *src, char *dst) {
       skip[i] = strchr(valid, i) ? i : 0;
   }
   for(; *s; s++) {
-    if(skip[(int) *s]) sprintf(dst, "%c", skip[(int) *s]), ++dst;
+    if(skip[(int) *s]) snprintf(dst, 2, "%c", skip[(int) *s]), ++dst;
     else {
-      sprintf(dst, "%%%02x", *s);
+      snprintf(dst, 16, "%%%02x", *s);
       while (*++dst);
     }
   }
@@ -286,7 +286,7 @@ int cgi(struct request *req, char *path) {
 
 int fallback(struct request *req, char *notfound) {
   char path[LINE_MAX];
-  sprintf(path, "%s.gmi", notfound);
+  snprintf(path, LINE_MAX, "%s.gmi", notfound);
   struct stat sb = { 0 };
   stat(path, &sb);
   return S_ISREG(sb.st_mode) ? file(req, path) : header(req, 51, "not found");
@@ -313,7 +313,7 @@ int route(struct request *req) {
   if(S_ISREG(sb.st_mode) && sb.st_mode & S_IXOTH) 
     return cgi(req, path);
   if(S_ISDIR(sb.st_mode)) {
-    sprintf(req->cwd + strlen(req->cwd), "/%s", path);
+    snprintf(req->cwd + strlen(req->cwd), PATH_MAX, "/%s", path);
     if(chdir(path)) return header(req, 51, "not found");
     return route(req);
   }
