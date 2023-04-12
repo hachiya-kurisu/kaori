@@ -425,7 +425,7 @@ int main() {
   if(secure && chroot(root)) errx(1, "chroot failed");
   if(chdir(secure ? "/" : root)) errx(1, "chdir failed");
 
-  openlog(0, LOG_NDELAY, LOG_DAEMON);
+  openlog("kaori", LOG_NDELAY, LOG_DAEMON);
 
   if(group && grp && setgid(grp->gr_gid)) errx(1, "setgid failed");
   if(user && pwd && setuid(pwd->pw_uid)) errx(1, "setuid failed");
