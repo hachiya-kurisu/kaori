@@ -116,7 +116,7 @@ void encode(char *src, char *dst) {
   for(; *s; s++) {
     if(skip[(int) *s]) snprintf(dst, 2, "%c", skip[(int) *s]), ++dst;
     else {
-      snprintf(dst, 16, "%%%02x", *s);
+      snprintf(dst, 3, "%%%02x", *s);
       while (*++dst);
     }
   }
