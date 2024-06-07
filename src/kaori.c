@@ -386,7 +386,7 @@ int kaori(struct request *req, char *url) {
   return route(req);
 }
 
-int main() {
+int main(void) {
   cookie = magic_open(MAGIC_MIME_TYPE);
   magic_load(cookie, 0);
   tzset();
