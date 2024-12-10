@@ -32,6 +32,10 @@ cert:
 		-in /etc/ssl/gemini.csr -signkey /etc/ssl/private/gemini.key \
 		-out /etc/ssl/gemini.crt
 
+push:
+	got send
+	git push
+
 clean:
 	rm -f kaori
 
