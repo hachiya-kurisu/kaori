@@ -20,11 +20,12 @@
 #include <sys/wait.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <magic.h>
 #include <tls.h>
 
 #define HEADER 1027
-#define BUFFER 4096
+#define BUFFER 65536
 
 struct host {
   char *domain, *root;
@@ -442,7 +443,8 @@ int main(void) {
   timeout.tv_sec = 10;
 
   int opt = 1;
-  setsockopt(server, SOL_SOCKET, SO_REUSEADDR, &opt, 4);
+  setsockopt(server, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(opt));
+  setsockopt(server, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
   setsockopt(server, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
   setsockopt(server, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
 
