@@ -12,11 +12,13 @@
 #include <limits.h>
 #include <signal.h>
 #include <syslog.h>
+#include <time.h>
 #include <grp.h>
 #include <pwd.h>
 #include <err.h>
 #include <glob.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -26,6 +28,20 @@
 
 #define HEADER 1027
 #define BUFFER 65536
+
+#ifndef __OpenBSD__
+int pledge(const char *promises, const char *execpromises) {
+  (void) promises;
+  (void) execpromises;
+  return 0;
+}
+
+int unveil(const char *path, const char *permissions) {
+  (void) path;
+  (void) permissions;
+  return 0;
+}
+#endif
 
 struct host {
   char *domain, *root;
@@ -423,8 +439,8 @@ int main(void) {
 
   daemon(0, 0);
 
-  if(secure && chroot(root)) errx(1, "chroot failed");
-  if(chdir(secure ? "/" : root)) errx(1, "chdir failed");
+  if(unveil(root, "rwxc")) errx(1, "unveil failed");
+  if(chdir(root)) errx(1, "chdir failed");
 
   openlog("kaori", LOG_NDELAY, LOG_DAEMON);
 

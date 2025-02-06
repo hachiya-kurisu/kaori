@@ -5,7 +5,7 @@ OS != uname -s
 
 CFLAGS += -DVERSION=\"${VERSION}\"
 CFLAGS += -DNAME=\"kaori\"
-CFLAGS += -Wall -Wextra -std=c99 -pedantic -static
+CFLAGS += -Wall -Wextra -std=c99 -pedantic
 
 PREFIX ?= /usr/local
 MANDIR ?= /share/man
