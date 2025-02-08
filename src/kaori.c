@@ -23,7 +23,6 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
-#include <magic.h>
 #include <tls.h>
 
 #define HEADER 1027
@@ -47,9 +46,29 @@ struct host {
   char *domain, *root;
 };
 
+struct mime {
+  char *ext;
+  char *type;
+};
+
+static const struct mime types[] = {
+  {".gmi", "text/gemini"},
+  {".txt", "text/plain"},
+  {".jpg", "image/jpeg"},
+  {".jpeg", "image/jpeg"},
+  {".png", "image/png"},
+  {".gif", "image/gif"},
+  {".jxl", "image/jxl"},
+  {".webp", "image/webp"},
+  {".mp3", "audio/mpeg"},
+  {".m4a", "audio/mp4"},
+  {".mp4", "video/mp4"},
+  {".wav", "audio/wav"},
+  { 0, 0 },
+};
+
 #include "../config.h"
 
-magic_t cookie;
 const char *valid = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
                     "abcdefghijklmnopqrstuvwxyz0123456789"
                     "-._~:/?#[]@!$&'()*+,;=%\r\n";
@@ -102,9 +121,13 @@ char *mime(char *path) {
   snprintf(override, PATH_MAX, ".%s.mime", path);
   if(dig(override, text, 0) != -1) return text;
 
-  char *type = (char *) magic_file(cookie, path);
-  if(!strncmp(type, "text/", 5)) return text;
-  return type;
+  char *ext = strchr(path, '.');
+  for (int i = 0; types[i].ext != 0; i++) {
+    if(!strcasecmp(ext, types[i].ext)) {
+      return types[i].type;
+    }
+  }
+  return "application/octet-stream";
 }
 
 void attr(const char *subject, char *key, char *dst) {
@@ -403,9 +426,16 @@ int kaori(struct request *req, char *url) {
   return route(req);
 }
 
-int main(void) {
-  cookie = magic_open(MAGIC_MIME_TYPE);
-  magic_load(cookie, 0);
+int main(int argc, char *argv[]) {
+  int debug = 0;
+
+  int c;
+  while((c = getopt(argc, argv, "d")) != -1) {
+    switch(c) {
+      case 'd': debug = 1;
+    }
+  }
+
   tzset();
 
   struct sockaddr_in6 addr;
@@ -437,7 +467,8 @@ int main(void) {
   if(user && !(pwd = getpwnam(user)))
     errx(1, "user %s not found", user);
 
-  daemon(0, 0);
+  if(!debug)
+    daemon(0, 0);
 
   if(unveil(root, "rwxc")) errx(1, "unveil failed");
   if(chdir(root)) errx(1, "chdir failed");
