@@ -1,5 +1,7 @@
-server.ext
-kaori
-kaori.o
-libkaori.a
-config.h
+/kaori
+/kaori.o
+/libkaori.a
+/config.h
+/kaori.csr
+/kaori.crt
+/kaori.key
