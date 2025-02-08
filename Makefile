@@ -10,7 +10,7 @@ CFLAGS += -Wall -Wextra -std=c99 -pedantic
 PREFIX ?= /usr/local
 MANDIR ?= /share/man
 
-LIBS += -lmagic -ltls -lssl -lcrypto -lz
+LIBS += -ltls -lssl -lcrypto -lz
 
 all: kaori
 
