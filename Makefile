@@ -29,6 +29,11 @@ cert:
 	openssl req -new -key kaori.key -out kaori.csr
 	openssl x509 -req -days 999999 -in kaori.csr -signkey kaori.key -out kaori.crt
 
+README.md: README.gmi
+	sisyphus -f markdown <README.gmi >README.md
+
+doc: README.md
+
 push:
 	got send
 	git push
