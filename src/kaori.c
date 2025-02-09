@@ -116,12 +116,14 @@ int dig(char *path, char *dst, char *needle) {
 
 char *mime(char *path) {
   char *ext = strchr(path, '.');
+  if(!ext)
+    return fallback;
   for (int i = 0; types[i].ext != 0; i++) {
     if(!strcasecmp(ext, types[i].ext)) {
       return types[i].type;
     }
   }
-  return "application/octet-stream";
+  return fallback;
 }
 
 void attr(const char *subject, char *key, char *dst) {
@@ -304,14 +306,6 @@ int cgi(struct request *req, char *path) {
   return 0;
 }
 
-int fallback(struct request *req, char *notfound) {
-  char path[LINE_MAX];
-  snprintf(path, LINE_MAX, "%s.gmi", notfound);
-  struct stat sb = { 0 };
-  stat(path, &sb);
-  return S_ISREG(sb.st_mode) ? file(req, path) : header(req, 51, "not found");
-}
-
 int route(struct request *req) {
   if(!dig(".authorized", 0, req->hash))
     return header(req, req->certified ? 61 : 60, "unauthorized");
@@ -336,7 +330,7 @@ int route(struct request *req) {
     if(chdir(path)) return header(req, 51, "not found");
     return route(req);
   }
-  return S_ISREG(sb.st_mode) ? file(req, path) : fallback(req, path);
+  return S_ISREG(sb.st_mode) ? file(req, path) : header(req, 51, "not found");
 }
 
 int kaori(struct request *req, char *url) {
