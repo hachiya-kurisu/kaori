@@ -1,7 +1,5 @@
 // see us after school for copyright and license details
 
-#define _PR_HAVE_LARGE_OFF_T
-
 #include <stdio.h>
 #include <ctype.h>
 #include <errno.h>
@@ -117,10 +115,6 @@ int dig(char *path, char *dst, char *needle) {
 }
 
 char *mime(char *path) {
-  char override[PATH_MAX] = { 0 };
-  snprintf(override, PATH_MAX, ".%s.mime", path);
-  if(dig(override, text, 0) != -1) return text;
-
   char *ext = strchr(path, '.');
   for (int i = 0; types[i].ext != 0; i++) {
     if(!strcasecmp(ext, types[i].ext)) {
@@ -221,19 +215,6 @@ void include(struct request *req, char *buf) {
   }
 }
 
-void process(struct request *req, int fd) {
-  FILE *fp = fdopen(fd, "r");
-  if(!fp) return;
-  char buf[LINE_MAX];
-  while(fgets(buf, LINE_MAX, fp)) {
-    if(!strncmp(buf, "$>", 2) && strlen(buf) > 2) {
-      include(req, &buf[2]);
-    } else {
-      deliver(req->tls, buf, strlen(buf));
-    }
-  }
-}
-
 void transfer(struct request *req, int fd) {
   char buf[BUFFER] = { 0 };
   ssize_t len;
@@ -246,7 +227,6 @@ int file(struct request *req, char *path) {
   if(fd == -1) return header(req, 51, "not found");
   char *type = mime(path);
   header(req, 20, type);
-  (wild && !strncmp(type, "text/", 5)) ? process(req, fd) : transfer(req, fd);
   transfer(req, fd);
   close(fd);
   return 0;
@@ -272,7 +252,7 @@ int ls(struct request *req) {
   stat("index.gmi", &sb);
   if(S_ISREG(sb.st_mode))
     return file(req, "index.gmi");
-  header(req, 20, text);
+  header(req, 20, "text/gemini");
   glob_t res;
   if(glob("*", GLOB_MARK, 0, &res)) {
     char *empty = "(*^o^*)\r\n";
@@ -336,7 +316,6 @@ int route(struct request *req) {
   if(!dig(".authorized", 0, req->hash))
     return header(req, req->certified ? 61 : 60, "unauthorized");
 
-  dig(".mime", text, 0);
   if(!req->path)  {
     char url[HEADER];
     snprintf(url, HEADER, "%s/", req->cwd);
@@ -531,4 +510,3 @@ int main(int argc, char *argv[]) {
   closelog();
   return 0;
 }
-
