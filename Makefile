@@ -36,10 +36,12 @@ doc: README.md
 
 push:
 	got send
-	git push
+	git push github
 
 clean:
 	rm -f kaori
 
 again: clean all
 
+release: push
+	git push github --tags
