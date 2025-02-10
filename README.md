@@ -2,6 +2,8 @@
 
 neon-drenched gemini server
 
+named after makimura kaori (槇村香) from city hunter
+
 ## a low simmer of desire hums in the air
 
 ```
