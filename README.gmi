@@ -1,6 +1,6 @@
 # kaori
 
-a gemini server
+neon-drenched gemini server
 
 ## a low simmer of desire hums in the air
 
