@@ -115,9 +115,16 @@ int dig(char *path, char *dst, char *needle) {
 }
 
 char *mime(char *path) {
+  static char type[PATH_MAX] = { 0 };
+
+  char override[PATH_MAX] = { 0 };
+  snprintf(override, PATH_MAX, ".%s.mime", path);
+  if(dig(override, type, 0) != -1) return type;
+
   char *ext = strchr(path, '.');
   if(!ext)
     return fallback;
+
   for (int i = 0; types[i].ext != 0; i++) {
     if(!strcasecmp(ext, types[i].ext)) {
       return types[i].type;
@@ -233,20 +240,39 @@ int file(struct request *req, char *path) {
   close(fd);
   return 0;
 }
+void humansize(double bytes, char *buffer, size_t len) {
+  const char *units[] = { "B", "KB", "MB", "GB", "TB", "PB", "EB" };
+  unsigned int i = 0;
+  while (bytes >= 1024.0 && i < (sizeof(units) / sizeof(units[0])) - 1) {
+    bytes /= 1024.0;
+    i++;
+  }
+  snprintf(buffer, len, "%.1f %s", bytes, units[i]);
+}
 
 void entry(struct request *req, char *path) {
   struct stat sb = { 0 };
   stat(path, &sb);
-  double size = sb.st_size / 1000.0;
+
   char full[PATH_MAX];
   snprintf(full, PATH_MAX, "%s/%s", req->cwd, path);
-  char buf[PATH_MAX * 2];
+
   char safe[strlen(path) * 3 + 1];
   encode(path, safe);
-  char *type = mime(path);
-  int len = snprintf(buf, PATH_MAX * 2, "=> %s %s [%s %.2f KB]\n",
-      safe, path, type, size);
-  deliver(req->tls, buf, len);
+
+  char *type;
+  if (S_ISDIR(sb.st_mode)) {
+    type = "directory";
+  } else {
+    type = mime(path);
+  }
+
+  char size[64];
+  humansize(sb.st_size, size, sizeof(size));
+
+  char s[PATH_MAX * 4];
+  int len = snprintf(s, sizeof(s), "=> %s %s [%s %s]\n", safe, path, type, size);
+  deliver(req->tls, s, len);
 }
 
 int ls(struct request *req) {
@@ -309,6 +335,8 @@ int cgi(struct request *req, char *path) {
 int route(struct request *req) {
   if(!dig(".authorized", 0, req->hash))
     return header(req, req->certified ? 61 : 60, "unauthorized");
+
+  dig(".mime", fallback, 0);
 
   if(!req->path)  {
     char url[HEADER];
