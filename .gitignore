@@ -1,6 +1,5 @@
 /kaori
-/kaori.o
-/libkaori.a
+/test
 /config.h
 /kaori.csr
 /kaori.crt

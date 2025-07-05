@@ -17,9 +17,13 @@ all: kaori
 config.h:
 	cp config.def.h $@
 
-kaori: config.h src/kaori.c
+kaori: config.h src/heart.c src/kaori.c
 	${CC} ${CFLAGS} ${LDFLAGS} -o $@ src/kaori.c ${LIBS}
 	strip $@
+
+test: src/test.c src/heart.c
+	${CC} ${CFLAGS} -o test src/test.c
+	./test
 
 install:
 	install kaori ${DESTDIR}${PREFIX}/bin/kaori
@@ -39,7 +43,7 @@ push:
 	git push github
 
 clean:
-	rm -f kaori
+	rm -f kaori test
 
 again: clean all
 
