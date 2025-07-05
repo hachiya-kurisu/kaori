@@ -82,7 +82,13 @@ struct request {
 };
 
 int cgi(struct request *, char *);
+
 int file(struct request *, char *);
+
+void die(int eval, const char *msg) {
+  syslog(LOG_ERR, "%s", msg);
+  _exit(eval);
+}
 
 int setdomain(char *domain) {
   struct host *host = hosts;
@@ -115,9 +121,9 @@ int dig(char *path, char *dst, char *needle) {
 }
 
 char *mime(char *path) {
-  static char type[PATH_MAX] = { 0 };
+  static char type[PATH_MAX] = {0};
 
-  char override[PATH_MAX] = { 0 };
+  char override[PATH_MAX] = {0};
   snprintf(override, PATH_MAX, ".%s.mime", path);
   if(dig(override, type, 0) != -1) return type;
 
@@ -134,13 +140,16 @@ char *mime(char *path) {
 }
 
 void attr(const char *subject, char *key, char *dst) {
-  char needle[128] = { 0 };
+  char needle[128] = {0};
   snprintf(needle, 128, "/%s=", key);
   char *found = strstr(subject, needle);
   if(found) {
     found += strlen(needle);
     char *end = strchr(found, '/');
     snprintf(dst, 128, "%.*s", (int) (end - found), found);
+    // or...?
+    // size_t len = strcspn(found, "/");
+    // snprintf(dst, 128, "%.*s", (int)len, found);
   }
 }
 
@@ -150,7 +159,7 @@ void encode(char *src, char *dst) {
     dst[0] = '\0';
     return;
   }
-  static char skip[256] = { 0 };
+  static char skip[256] = {0};
   if(!skip[(int) '-']) {
     unsigned int i;
     for(i = 0; i < 256; i++)
@@ -167,7 +176,7 @@ void encode(char *src, char *dst) {
 
 int decode(char *src, char *dst) {
   int pos = 0;
-  char buf[3] = { 0 };
+  char buf[3] = {0};
   unsigned int decoded;
   while(src && *src) {
     buf[pos] = *src;
@@ -197,7 +206,7 @@ void deliver(struct tls *tls, char *buf, int len) {
   while(len > 0) {
     ssize_t ret = tls_write(tls, buf, len);
     if(ret == TLS_WANT_POLLIN || ret == TLS_WANT_POLLOUT) continue;
-    if(ret == -1) errx(1, "tls_write: %s", tls_error(tls));
+    if(ret == -1) die(1, "tls_write failed");
     buf += ret; len -= ret;
   }
 }
@@ -215,7 +224,7 @@ int header(struct request *req, int status, char *meta) {
 void include(struct request *req, char *buf) {
   buf += strspn(buf, " \t");
   buf[strcspn(buf, "\r\n")] = 0;
-  struct stat sb = { 0 };
+  struct stat sb = {0};
   stat(buf, &sb);
   if(S_ISREG(sb.st_mode) && sb.st_mode & S_IXOTH) {
     cgi(req, buf);
@@ -225,10 +234,11 @@ void include(struct request *req, char *buf) {
 }
 
 void transfer(struct request *req, int fd) {
-  char buf[BUFFER] = { 0 };
+  char buf[BUFFER] = {0};
   ssize_t len;
-  while((len = read(fd, buf, BUFFER)) != 0)
+  while((len = read(fd, buf, BUFFER)) > 0)
     deliver(req->tls, buf, len);
+  if(len == -1) die(1, "read failed");
 }
 
 int file(struct request *req, char *path) {
@@ -251,11 +261,8 @@ void humansize(double bytes, char *buffer, size_t len) {
 }
 
 void entry(struct request *req, char *path) {
-  struct stat sb = { 0 };
+  struct stat sb = {0};
   stat(path, &sb);
-
-  char full[PATH_MAX];
-  snprintf(full, PATH_MAX, "%s/%s", req->cwd, path);
 
   char safe[strlen(path) * 3 + 1];
   encode(path, safe);
@@ -276,7 +283,7 @@ void entry(struct request *req, char *path) {
 }
 
 int ls(struct request *req) {
-  struct stat sb = { 0 };
+  struct stat sb = {0};
   stat("index.gmi", &sb);
   if(S_ISREG(sb.st_mode))
     return file(req, "index.gmi");
@@ -312,7 +319,7 @@ int cgi(struct request *req, char *path) {
   pipe(fd);
 
   pid_t pid = fork();
-  if(pid == -1) errx(1, "fork failed");
+  if(pid == -1) die(1, "fork failed");
 
   if(!pid) {
     dup2(fd[1], 1);
@@ -322,13 +329,19 @@ int cgi(struct request *req, char *path) {
   }
   close(fd[1]);
 
-  char buf[BUFFER] = { 0 };
+  char buf[BUFFER] = {0};
   ssize_t len;
   while((len = read(fd[0], buf, BUFFER)) != 0) {
     deliver(req->tls, buf, len);
   }
-  kill(pid, SIGKILL);
-  wait(0);
+  close(fd[0]);
+  kill(pid, SIGTERM);
+  int status;
+  if(waitpid(pid, &status, WNOHANG) == 0) {
+    sleep(1);
+    kill(pid, SIGKILL);
+    waitpid(pid, &status, 0);
+  }
   return 0;
 }
 
@@ -349,12 +362,16 @@ int route(struct request *req) {
   if(!strcspn(req->path, "/")) return ls(req);
 
   char *path = strsep(&req->path, "/");
-  struct stat sb = { 0 };
+  struct stat sb = {0};
   stat(path, &sb);
   if(S_ISREG(sb.st_mode) && sb.st_mode & S_IXOTH) 
     return cgi(req, path);
   if(S_ISDIR(sb.st_mode)) {
-    snprintf(req->cwd + strlen(req->cwd), PATH_MAX, "/%s", path);
+    size_t current = strlen(req->cwd);
+    int bytes = snprintf(req->cwd + current, PATH_MAX - current, "/%s", path);
+    int remaining = (int)(PATH_MAX - current);
+    if(bytes >= (int)(PATH_MAX - current))
+      return header(req, 50, "path too long");
     if(chdir(path)) return header(req, 51, "not found");
     return route(req);
   }
@@ -413,8 +430,8 @@ int kaori(struct request *req, char *url) {
   if(!setdomain(domain)) return header(req, 53, "refused");
 
   char cwd[HEADER] = "";
-  char path[HEADER] = { 0 };
-  char query[HEADER] = { 0 };
+  char path[HEADER] = {0};
+  char query[HEADER] = {0};
 
   decode(rawpath, path);
   decode(rawquery, query);
@@ -459,8 +476,8 @@ int main(int argc, char *argv[]) {
   if(tls_configure(tls, tlsconf) < 0)
     errx(1, "tls_configure failed");
 
-  struct group *grp = { 0 };
-  struct passwd *pwd = { 0 };
+  struct group *grp = {0};
+  struct passwd *pwd = {0};
 
   if(group && !(grp = getgrnam(group)))
     errx(1, "group %s not found", group);
@@ -508,10 +525,10 @@ int main(int argc, char *argv[]) {
     if(pid == -1) errx(1, "fork failed");
     if(!pid) {
       close(server);
-      struct request req = { 0 };
+      struct request req = {0};
       if(tls_accept_socket(tls, &req.tls, sock) < 0)
         errx(1, "tls_accept_socket failed");
-      char url[HEADER] = { 0 };
+      char url[HEADER] = {0};
       if(tls_read(req.tls, url, HEADER) == -1) {
         tls_close(req.tls);
         errx(1, "tls_read failed");

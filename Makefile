@@ -5,7 +5,7 @@ OS != uname -s
 
 CFLAGS += -DVERSION=\"${VERSION}\"
 CFLAGS += -DNAME=\"kaori\"
-CFLAGS += -Wall -Wextra -std=c99 -pedantic -fsanitize=undefined
+CFLAGS += -Wall -Wextra -std=c99 -pedantic -O2
 
 PREFIX ?= /usr/local
 MANDIR ?= /share/man
@@ -18,7 +18,7 @@ config.h:
 	cp config.def.h $@
 
 kaori: config.h src/kaori.c
-	${CC} ${CFLAGS} ${LDFLAGS} -L. -o $@ src/kaori.c ${LIBS}
+	${CC} ${CFLAGS} ${LDFLAGS} -o $@ src/kaori.c ${LIBS}
 	strip $@
 
 install:
