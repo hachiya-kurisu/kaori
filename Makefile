@@ -24,6 +24,7 @@ kaori: config.h src/heart.c src/kaori.c
 test: src/test.c src/heart.c
 	${CC} ${CFLAGS} -o test src/test.c
 	./test
+	rm -f test
 
 install:
 	install kaori ${DESTDIR}${PREFIX}/bin/kaori
@@ -38,7 +39,7 @@ README.md: README.gmi
 
 doc: README.md
 
-push:
+push: test
 	got send
 	git push github
 
