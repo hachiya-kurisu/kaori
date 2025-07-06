@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include <limits.h>
+#include <unistd.h>
 
 struct mime {
   char *ext;
@@ -93,8 +94,12 @@ void encode(char *src, char *dst) {
   for(; *s; s++) {
     if(skip[(int) *s]) snprintf(dst, 2, "%c", skip[(int) *s]), ++dst;
     else {
-      snprintf(dst, 4, "%%%02x", *s);
-      dst += 3;
+      int bytes = snprintf(dst, 4, "%%%02x", *s);
+      if(bytes <= 0) {
+        *dst = '\0';
+        return;
+      }
+      dst += bytes;
     }
   }
   *dst = '\0';
@@ -127,5 +132,3 @@ int decode(char *src, char *dst) {
   *dst++ = '\0';
   return 0;
 }
-
-

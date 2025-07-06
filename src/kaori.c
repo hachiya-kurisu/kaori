@@ -392,6 +392,8 @@ int main(int argc, char *argv[]) {
 
   listen(server, 32);
 
+  signal(SIGCHLD, SIG_IGN);
+
   int sock;
   socklen_t len = sizeof(addr);
   while((sock = accept(server, (struct sockaddr *) &addr, &len)) > -1) {
@@ -412,9 +414,9 @@ int main(int argc, char *argv[]) {
       req.ip = ip;
       kaori(&req, url);
       tls_close(req.tls);
+      _exit(0);
     } else {
       close(sock);
-      signal(SIGCHLD, SIG_IGN);
     }
   }
   tls_close(tls);
