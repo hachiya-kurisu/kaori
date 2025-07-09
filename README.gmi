@@ -37,3 +37,7 @@ $ rcctl start kaori
 
 => gemini://higeki.jp/ my capsule
 => gemini://manatsu.town/ manatsu
+
+## author
+
+=> https://blekksprut.net/ 蜂谷栗栖
