@@ -270,7 +270,8 @@ static int cgi(struct request *req, char *path) {
   }
 
   int fd[2];
-  pipe(fd);
+  if(pipe(fd) == -1)
+    die(1, "pipe failed");
 
   pid_t pid = fork();
   if(pid == -1) die(1, "fork failed");

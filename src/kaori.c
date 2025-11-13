@@ -34,7 +34,7 @@ char *user = "www";
 char *group = "www";
 
 char *addr = "::1";
-char *port = "300";
+char *port = "1965";
 
 char *crt = "kaori.crt";
 char *key = "kaori.key";
