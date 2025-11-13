@@ -280,7 +280,9 @@ static int cgi(struct request *req, char *path) {
     dup2(fd[1], 1);
     close(fd[0]);
     char *argv[] = { path, 0 };
+    alarm(30);
     execv(path, argv);
+    _exit(1);
   }
   close(fd[1]);
 
