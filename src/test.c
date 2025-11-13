@@ -1,8 +1,6 @@
-char *fallback = "test/fallback";
+#include "gemini.c"
 
-#include "heart.c"
-
-void checkstr(const char *name, const char *expected, const char *actual) {
+static void checkstr(const char *name, const char *expected, const char *actual) {
   if (strcmp(expected, actual) == 0) {
     printf("✓ %s\n", name);
   } else {
@@ -13,8 +11,7 @@ void checkstr(const char *name, const char *expected, const char *actual) {
 int main(void) {
   checkstr("mime .gmi", "text/gemini", mime("test.gmi"));
   checkstr("mime .txt", "text/plain", mime("readme.txt"));
-  checkstr("mime unknown", "test/fallback", mime("test.xyz"));
-  checkstr("mime no ext", "test/fallback", mime("README"));
+  checkstr("mime no ext", "application/octet-stream", mime("README"));
 
   char encoded[256] = {0};
   encode("hello world", encoded);

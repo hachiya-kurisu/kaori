@@ -1,43 +1,47 @@
-VERSION = 0.3
+VERSION = 0.4
 OS != uname -s
 
 -include Makefile.$(OS)
 
 CFLAGS += -DVERSION=\"${VERSION}\"
 CFLAGS += -DNAME=\"kaori\"
-CFLAGS += -Wall -Wextra -std=c99 -pedantic -O2
+CFLAGS += -Wall -Wextra -std=c99 -pedantic -Wformat=2
+CFLAGS += -fstack-protector-strong -D_FORTIFY_SOURCE=2
 
 PREFIX ?= /usr/local
-MANDIR ?= /share/man
 
 LIBS += -ltls -lssl -lcrypto -lz
 
+.PHONY: all install lint doc push clean again release
+
 all: kaori
 
-config.h:
-	cp config.def.h $@
-
-kaori: config.h src/heart.c src/kaori.c
-	${CC} ${CFLAGS} ${LDFLAGS} -o $@ src/kaori.c ${LIBS}
-	strip $@
-
-test: src/test.c src/heart.c
-	${CC} ${CFLAGS} -o test src/test.c
-	./test
-	rm -f test
+kaori: src/gemini.c src/kaori.c
+	${CC} ${CFLAGS} ${LDFLAGS} -o $@ src/gemini.c src/kaori.c ${LIBS}
 
 install:
-	install kaori ${DESTDIR}${PREFIX}/bin/kaori
+	install -d ${DESTDIR}${PREFIX}/bin
+	install -d ${DESTDIR}/etc/rc.d
+	install -m 755 kaori ${DESTDIR}${PREFIX}/bin/kaori
+	install -m 555 kaori.rc ${DESTDIR}/etc/rc.d/kaori
 
-cert:
-	openssl genrsa -out kaori.key 2048
-	openssl req -new -key kaori.key -out kaori.csr
-	openssl x509 -req -days 999999 -in kaori.csr -signkey kaori.key -out kaori.crt
+lint:
+	cppcheck --enable=all --suppress=missingIncludeSystem src/*.c
 
 README.md: README.gmi
 	sisyphus -f markdown <README.gmi >README.md
 
 doc: README.md
+
+test: src/test.c src/gemini.c
+	${CC} ${CFLAGS} ${LDFLAGS} -o test src/test.c ${LIBS}
+	./test
+	rm -f test
+
+cert:
+	openssl genrsa -out kaori.key 2048
+	openssl req -new -key kaori.key -out kaori.csr
+	openssl x509 -req -days 999999 -in kaori.csr -signkey kaori.key -out kaori.crt
 
 push: test
 	got send
