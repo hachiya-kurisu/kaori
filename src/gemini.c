@@ -250,6 +250,7 @@ static int ls(struct request *req) {
   for(size_t i = 0; i < res.gl_pathc; i++) {
     entry(req, res.gl_pathv[i]);
   }
+  globfree(&res);
   return 0;
 }
 
