@@ -53,7 +53,7 @@ int main(int argc, char *argv[]) {
   int c;
   while((c = getopt(argc, argv, "dhsu:g:a:p:r:c:k:")) != -1) {
     switch(c) {
-      case 'd': debug = 1;
+      case 'd': debug = 1; break;
       case 's': shared = 1; break;
       case 'u': user = optarg; break;
       case 'g': group = optarg; break;
@@ -172,7 +172,7 @@ int main(int argc, char *argv[]) {
         errx(1, "inet_ntop failed");
 
       req.ip = ip;
-      gemini(&req, url);
+      gemini(&req, url, shared);
       tls_close(req.tls);
       _exit(0);
     } else {

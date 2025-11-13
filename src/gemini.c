@@ -332,7 +332,7 @@ static int route(struct request *req) {
   return S_ISREG(sb.st_mode) ? file(req, path) : header(req, 51, "not found");
 }
 
-int gemini(struct request *req, char *url) {
+int gemini(struct request *req, char *url, int shared) {
   size_t eof = strspn(url, valid);
   if(url[eof]) return header(req, 59, "bad request");
 
@@ -381,7 +381,7 @@ int gemini(struct request *req, char *url) {
   if(domain && (port = strchr(domain, ':'))) *port++ = '\0';
   if(port && strcmp(port, "1965")) return header(req, 53, "refused");
 
-  //  return chdir(domain) ? 0 : 1;
+  if(!shared && chdir(domain)) return header(req, 4, "not found");
 
   static char cwd[HEADER] = "";
   static char path[HEADER] = {0};

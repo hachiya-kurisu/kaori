@@ -16,6 +16,6 @@ struct request {
 
 extern const char *fallback;
 
-int gemini(struct request *req, char *url);
+int gemini(struct request *req, char *url, int shared);
 
 #endif
