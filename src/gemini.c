@@ -5,7 +5,6 @@
 #include <limits.h>
 #include <syslog.h>
 #include <unistd.h>
-#include <stdio.h>
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -215,7 +214,7 @@ static void humansize(double bytes, char *buffer, size_t len) {
 
 static void entry(struct request *req, char *path) {
   struct stat sb = {0};
-  stat(path, &sb);
+  if(stat(path, &sb) == -1) return;
 
   char safe[strlen(path) * 3 + 1];
   encode(path, safe);
@@ -237,8 +236,8 @@ static void entry(struct request *req, char *path) {
 
 static int ls(struct request *req) {
   struct stat sb = {0};
-  stat("index.gmi", &sb);
-  if(S_ISREG(sb.st_mode))
+  int ok = stat("index.gmi", &sb);
+  if(!ok && S_ISREG(sb.st_mode))
     return file(req, "index.gmi");
   header(req, 20, "text/gemini");
   glob_t res;
@@ -288,9 +287,9 @@ static int cgi(struct request *req, char *path) {
 
   char buf[BUFFER] = {0};
   ssize_t len;
-  while((len = read(fd[0], buf, BUFFER)) != 0) {
+  while((len = read(fd[0], buf, BUFFER)) != 0)
     deliver(req->tls, buf, len);
-  }
+
   close(fd[0]);
   kill(pid, SIGTERM);
   int status;
@@ -320,7 +319,8 @@ static int route(struct request *req) {
 
   char *path = strsep(&req->path, "/");
   struct stat sb = {0};
-  stat(path, &sb);
+  if(stat(path, &sb) == -1)
+    return header(req, 51, "not found");
   if(S_ISREG(sb.st_mode) && sb.st_mode & S_IXOTH) 
     return cgi(req, path);
   if(S_ISDIR(sb.st_mode)) {
@@ -362,7 +362,7 @@ int gemini(struct request *req, char *url, int shared) {
     if(expiry != -1 && difftime(expiry, req->time) < 0) req->expired = 1;
   }
   if(req->certified) {
-    syslog(LOG_INFO, "%s %s {%s CN:%s}", url, req->ip, req->hash, req->uid);
+    syslog(LOG_INFO, "%s %s {%s CN:%s}", url, req->ip, req->hash, req->cn);
   } else {
     syslog(LOG_INFO, "%s %s", url, req->ip);
   }
