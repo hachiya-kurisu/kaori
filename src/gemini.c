@@ -229,7 +229,7 @@ static void entry(struct request *req, char *path) {
   char size[64];
   humansize(sb.st_size, size, sizeof(size));
 
-  char s[PATH_MAX * 4];
+  char s[PATH_MAX * 5];
   int len = snprintf(s, sizeof(s), "=> %s %s [%s %s]\n", safe, path, type, size);
   deliver(req->tls, s, len);
 }
@@ -320,7 +320,7 @@ static int route(struct request *req) {
   struct stat sb = {0};
   if(stat(path, &sb) == -1)
     return header(req, 51, "not found");
-  if(S_ISREG(sb.st_mode) && sb.st_mode & S_IXOTH) 
+  if(S_ISREG(sb.st_mode) && sb.st_mode & S_IXOTH)
     return cgi(req, path);
   if(S_ISDIR(sb.st_mode)) {
     size_t current = strlen(req->cwd);
