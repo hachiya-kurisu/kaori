@@ -19,13 +19,10 @@
 #include <pwd.h>
 #include <err.h>
 #include <glob.h>
+#include <tls.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <tls.h>
 
 
 #include "gemini.h"
