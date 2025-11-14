@@ -317,7 +317,7 @@ static int route(struct request *req) {
   struct stat sb = {0};
   if(stat(path, &sb) == -1)
     return header(req, 51, "not found");
-  if(S_ISREG(sb.st_mode) && sb.st_mode & S_IXOTH)
+  if(S_ISREG(sb.st_mode) && sb.st_mode & 0111)
     return cgi(req, path);
   if(S_ISDIR(sb.st_mode)) {
     size_t current = strlen(req->cwd);
