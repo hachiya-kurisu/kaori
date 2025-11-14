@@ -288,7 +288,7 @@ static int cgi(struct request *req, char *path) {
 
   char buf[BUFFER] = {0};
   ssize_t len;
-  while((len = read(fd[0], buf, BUFFER)) != 0)
+  while((len = read(fd[0], buf, BUFFER)) > 0)
     deliver(req->tls, buf, len);
 
   close(fd[0]);
@@ -305,8 +305,6 @@ static int cgi(struct request *req, char *path) {
 static int route(struct request *req) {
   if(!dig(".authorized", 0, req->hash))
     return header(req, req->certified ? 61 : 60, "unauthorized");
-
-  dig(".mime", (char *) fallback, 0);
 
   if(!req->path)  {
     char url[HEADER];
