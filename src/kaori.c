@@ -67,9 +67,9 @@ int main(int argc, char *argv[]) {
   tzset();
 
   struct tls_config *tlsconf = 0;
-  struct tls *tls = 0;
+  struct tls *ctx = 0;
 
-  if(!(tls = tls_server())) errx(1, "tls_server failed");
+  if(!(ctx = tls_server())) errx(1, "tls_server failed");
   if(!(tlsconf = tls_config_new())) errx(1, "tls_config_new failed");
   if(tls_config_set_key_file(tlsconf, key) < 0)
     errx(1, "tls_config_set_key_file failed");
@@ -79,7 +79,7 @@ int main(int argc, char *argv[]) {
   tls_config_verify_client_optional(tlsconf);
   tls_config_insecure_noverifycert(tlsconf);
 
-  if(tls_configure(tls, tlsconf) < 0)
+  if(tls_configure(ctx, tlsconf) < 0)
     errx(1, "tls_configure failed");
 
   struct addrinfo hints, *res;
@@ -149,12 +149,13 @@ int main(int argc, char *argv[]) {
     if(pid == -1) errx(1, "fork failed");
     if(!pid) {
       close(server);
-      struct request req = {0};
-      if(tls_accept_socket(tls, &req.tls, sock) < 0)
+      struct tls *tls;
+      if(tls_accept_socket(ctx, &tls, sock) < 0)
         errx(1, "tls_accept_socket failed");
+
       char url[HEADER] = {0};
-      if(tls_read(req.tls, url, HEADER) == -1) {
-        tls_close(req.tls);
+      if(tls_read(tls, url, HEADER) == -1) {
+        tls_close(tls);
         errx(1, "tls_read failed");
       }
       char ip[INET6_ADDRSTRLEN];
@@ -167,16 +168,15 @@ int main(int argc, char *argv[]) {
       if(!inet_ntop(client.ss_family, ptr, ip, INET6_ADDRSTRLEN))
         errx(1, "inet_ntop failed");
 
-      req.ip = ip;
-      gemini(&req, url, shared);
-      tls_close(req.tls);
+      gemini(tls, url, shared);
+      tls_close(tls);
       _exit(0);
     } else {
       close(sock);
     }
   }
-  tls_close(tls);
-  tls_free(tls);
+  tls_close(ctx);
+  tls_free(ctx);
   tls_config_free(tlsconf);
   closelog();
   return 0;

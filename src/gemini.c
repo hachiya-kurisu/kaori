@@ -24,15 +24,18 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 
-
 #include "gemini.h"
 
-struct mime {
-  char *ext;
-  char *type;
-};
+static struct request {
+  struct tls *tls;
+  time_t time;
+  char *cwd, *path, *query;
+  int certified, expired, ongoing;
+  char *hash;
+  char cn[128], uid[128], email[128], org[128];
+} req;
 
-static const struct mime types[] = {
+static const char *types[][2] = {
   {".gmi", "text/gemini"},
   {".txt", "text/plain"},
   {".jpg", "image/jpeg"},
@@ -84,9 +87,9 @@ static const char *mime(const char *path) {
   if(!ext)
     return fallback;
 
-  for (int i = 0; types[i].ext != 0; i++) {
-    if(!strcasecmp(ext, types[i].ext)) {
-      return types[i].type;
+  for (int i = 0; types[i][0] != 0; i++) {
+    if(!strcasecmp(ext, types[i][0])) {
+      return types[i][1];
     }
   }
   return fallback;
@@ -171,30 +174,30 @@ static void deliver(struct tls *tls, char *buf, int len) {
   }
 }
 
-static int header(struct request *req, int status, const char *meta) {
-  if(req->ongoing) return 1;
+static int header(int status, const char *meta) {
+  if(req.ongoing) return 1;
   if(strlen(meta) > 1024) return 1;
   char buf[HEADER];
   int len = snprintf(buf, HEADER, "%d %s\r\n", status, *meta ? meta : "");
-  deliver(req->tls, buf, len);
-  req->ongoing = 1;
+  deliver(req.tls, buf, len);
+  req.ongoing = 1;
   return 0;
 }
 
-static void transfer(struct request *req, int fd) {
+static void transfer(int fd) {
   char buf[BUFFER] = {0};
   ssize_t len;
   while((len = read(fd, buf, BUFFER)) > 0)
-    deliver(req->tls, buf, len);
+    deliver(req.tls, buf, len);
   if(len == -1) die(1, "read failed");
 }
 
-static int file(struct request *req, char *path) {
+static int file(char *path) {
   int fd = open(path, O_RDONLY);
-  if(fd == -1) return header(req, 51, "not found");
+  if(fd == -1) return header(51, "not found");
   const char *type = mime(path);
-  header(req, 20, type);
-  transfer(req, fd);
+  header(20, type);
+  transfer(fd);
   close(fd);
   return 0;
 }
@@ -209,7 +212,7 @@ static void humansize(double bytes, char *buffer, size_t len) {
   snprintf(buffer, len, "%.1f %s", bytes, units[i]);
 }
 
-static void entry(struct request *req, char *path) {
+static void entry(char *path) {
   struct stat sb = {0};
   if(stat(path, &sb) == -1) return;
 
@@ -228,42 +231,40 @@ static void entry(struct request *req, char *path) {
 
   char s[PATH_MAX * 5];
   int len = snprintf(s, sizeof(s), "=> %s %s [%s %s]\n", safe, path, type, size);
-  deliver(req->tls, s, len);
+  deliver(req.tls, s, len);
 }
 
-static int ls(struct request *req) {
+static int ls(void) {
   struct stat sb = {0};
   int ok = stat("index.gmi", &sb);
   if(!ok && S_ISREG(sb.st_mode))
-    return file(req, "index.gmi");
-  header(req, 20, "text/gemini");
+    return file("index.gmi");
+  header(20, "text/gemini");
   glob_t res;
   if(glob("*", GLOB_MARK, 0, &res)) {
     char *empty = "(*^o^*)\r\n";
-    deliver(req->tls, empty, strlen(empty));
+    deliver(req.tls, empty, strlen(empty));
     return 0;
   }
   for(size_t i = 0; i < res.gl_pathc; i++) {
-    entry(req, res.gl_pathv[i]);
+    entry(res.gl_pathv[i]);
   }
   globfree(&res);
   return 0;
 }
 
-static int cgi(struct request *req, char *path) {
+static int cgi(char *path) {
   setenv("GATEWAY_INTERFACE", "CGI/1.1", 1);
-  setenv("QUERY_STRING", req->query ? req->query : "", 1);
-  setenv("PATH_INFO", req->path ? req->path : "", 1);
+  setenv("QUERY_STRING", req.query ? req.query : "", 1);
+  setenv("PATH_INFO", req.path ? req.path : "", 1);
   setenv("SCRIPT_NAME", path ? path : "", 1);
-  setenv("REMOTE_ADDR", req->ip, 1);
-  setenv("REMOTE_HOST", req->ip, 1);
   setenv("SERVER_PORT", "1965", 1);
   setenv("SERVER_SOFTWARE", "槇村香/202012", 1);
   setenv("SERVER_PROTOCOL", "gemini", 1);
-  if(req->certified) {
+  if(req.certified) {
     setenv("AUTH_TYPE", "Certificate", 1);
-    setenv("REMOTE_USER", *req->cn ? req->cn : "", 1);
-    setenv("TLS_CLIENT_HASH", req->hash, 1);
+    setenv("REMOTE_USER", *req.cn ? req.cn : "", 1);
+    setenv("TLS_CLIENT_HASH", req.hash, 1);
   }
 
   int fd[2];
@@ -286,7 +287,7 @@ static int cgi(struct request *req, char *path) {
   char buf[BUFFER] = {0};
   ssize_t len;
   while((len = read(fd[0], buf, BUFFER)) > 0)
-    deliver(req->tls, buf, len);
+    deliver(req.tls, buf, len);
 
   close(fd[0]);
   kill(pid, SIGTERM);
@@ -299,77 +300,80 @@ static int cgi(struct request *req, char *path) {
   return 0;
 }
 
-static int route(struct request *req) {
-  if(!dig(".authorized", 0, req->hash))
-    return header(req, req->certified ? 61 : 60, "unauthorized");
+static int route(void) {
+  if(!dig(".authorized", 0, req.hash))
+    return header(req.certified ? 61 : 60, "unauthorized");
 
-  if(!req->path)  {
+  if(!req.path)  {
     char url[HEADER];
-    snprintf(url, HEADER, "%s/", req->cwd);
-    if(!strlen(url)) return header(req, 59, "bad request");
+    snprintf(url, HEADER, "%s/", req.cwd);
+    if(!strlen(url)) return header(59, "bad request");
     char safe[strlen(url) * 3 + 1];
     encode(url, safe);
-    return header(req, 30, safe);
+    return header(30, safe);
   }
-  if(!strcspn(req->path, "/")) return ls(req);
+  if(!strcspn(req.path, "/")) return ls();
 
-  char *path = strsep(&req->path, "/");
+  char *path = strsep(&req.path, "/");
   struct stat sb = {0};
   if(stat(path, &sb) == -1)
-    return header(req, 51, "not found");
+    return header(51, "not found");
   if(S_ISREG(sb.st_mode) && sb.st_mode & 0111)
-    return cgi(req, path);
+    return cgi(path);
   if(S_ISDIR(sb.st_mode)) {
-    size_t current = strlen(req->cwd);
-    int bytes = snprintf(req->cwd + current, PATH_MAX - current, "/%s", path);
+    size_t current = strlen(req.cwd);
+    int bytes = snprintf(req.cwd + current, PATH_MAX - current, "/%s", path);
     if(bytes >= (int)(PATH_MAX - current))
-      return header(req, 50, "path too long");
-    if(chdir(path)) return header(req, 51, "not found");
-    return route(req);
+      return header(50, "path too long");
+    if(chdir(path)) return header(51, "not found");
+    return route();
   }
-  return S_ISREG(sb.st_mode) ? file(req, path) : header(req, 51, "not found");
+  return S_ISREG(sb.st_mode) ? file(path) : header(51, "not found");
 }
 
-int gemini(struct request *req, char *url, int shared) {
-  size_t eof = strspn(url, valid);
-  if(url[eof]) return header(req, 59, "bad request");
+int gemini(struct tls *tls, char *url, int shared) {
+  req.tls = tls;
+  req.ongoing = 0;
 
-  if(strlen(url) >= HEADER) return header(req, 59, "bad request");
-  if(strlen(url) <= 2) return header(req, 59, "bad request");
+  size_t eof = strspn(url, valid);
+  if(url[eof]) return header(59, "bad request");
+
+  if(strlen(url) >= HEADER) return header(59, "bad request");
+  if(strlen(url) <= 2) return header(59, "bad request");
   if(url[strlen(url) - 2] != '\r' || url[strlen(url) - 1] != '\n')
     return 1;
   url[strcspn(url, "\r\n")] = 0;
 
-  req->time = time(0);
-  if(tls_peer_cert_provided(req->tls)) {
-    req->certified = 1;
-    req->hash = (char *) tls_peer_cert_hash(req->tls);
+  req.time = time(0);
+  if(tls_peer_cert_provided(req.tls)) {
+    req.certified = 1;
+    req.hash = (char *) tls_peer_cert_hash(req.tls);
 
-    const char *subject = tls_peer_cert_subject(req->tls);
+    const char *subject = tls_peer_cert_subject(req.tls);
     if(subject) {
-      attr(subject, "CN", req->cn);
-      attr(subject, "UID", req->uid);
-      attr(subject, "emailAddress", req->email);
-      attr(subject, "O", req->org);
+      attr(subject, "CN", req.cn);
+      attr(subject, "UID", req.uid);
+      attr(subject, "emailAddress", req.email);
+      attr(subject, "O", req.org);
     }
-    int first = tls_peer_cert_notbefore(req->tls);
-    int expiry = tls_peer_cert_notafter(req->tls);
-    if(first != -1 && difftime(req->time, first) < 0) req->expired = -1;
-    if(expiry != -1 && difftime(expiry, req->time) < 0) req->expired = 1;
+    int first = tls_peer_cert_notbefore(req.tls);
+    int expiry = tls_peer_cert_notafter(req.tls);
+    if(first != -1 && difftime(req.time, first) < 0) req.expired = -1;
+    if(expiry != -1 && difftime(expiry, req.time) < 0) req.expired = 1;
   }
-  if(req->certified) {
-    syslog(LOG_INFO, "%s %s {%s CN:%s}", url, req->ip, req->hash, req->cn);
+  if(req.certified) {
+    syslog(LOG_INFO, "%s {%s CN:%s}", url, req.hash, req.cn);
   } else {
-    syslog(LOG_INFO, "%s %s", url, req->ip);
+    syslog(LOG_INFO, "%s", url);
   }
 
   const char *scheme = strsep(&url, ":");
-  if(!url || strncmp(url, "//", 2)) return header(req, 59, "bad request");
+  if(!url || strncmp(url, "//", 2)) return header(59, "bad request");
 
   if(!strcmp(scheme, "gemini"))
     url += 2;
   else
-    return header(req, 53, "nope");
+    return header(53, "nope");
 
   const char *domain = strsep(&url, "/");
   const char *rawpath = strsep(&url, "?");
@@ -377,9 +381,9 @@ int gemini(struct request *req, char *url, int shared) {
 
   char *port = 0;
   if(domain && (port = strchr(domain, ':'))) *port++ = '\0';
-  if(port && strcmp(port, "1965")) return header(req, 53, "refused");
+  if(port && strcmp(port, "1965")) return header(53, "refused");
 
-  if(!shared && chdir(domain)) return header(req, 4, "not found");
+  if(!shared && chdir(domain)) return header(51, "not found");
 
   static char cwd[HEADER] = "";
   static char path[HEADER] = {0};
@@ -388,12 +392,12 @@ int gemini(struct request *req, char *url, int shared) {
   decode(rawpath, path);
   decode(rawquery, query);
   if(*path && ((*path == '/') || strstr(path, "..") || strstr(path, "//")))
-    return header(req, 51, "not found");
+    return header(51, "not found");
 
-  req->cwd = cwd;
-  req->path = path;
-  req->query = query;
-  return route(req);
+  req.cwd = cwd;
+  req.path = path;
+  req.query = query;
+  return route();
 }
 
 
