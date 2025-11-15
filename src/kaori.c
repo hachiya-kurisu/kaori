@@ -49,6 +49,44 @@ static void version(const char *name) {
   fprintf(stdout, "%s %s\n", name, VERSION);
 }
 
+static void out(void *ctx, char *buf, int len) {
+  struct tls *tls = ctx;
+  while(len > 0) {
+    ssize_t ret = tls_write(tls, buf, len);
+    if(ret == TLS_WANT_POLLIN || ret == TLS_WANT_POLLOUT) continue;
+    if(ret == -1) errx(1, "tls_write failed");
+    buf += ret; len -= ret;
+  }
+}
+
+void attr(const char *subject, const char *key, char *dst) {
+  char needle[128] = {0};
+  snprintf(needle, 128, "/%s=", key);
+  char *found = strstr(subject, needle);
+  if(found) {
+    found += strlen(needle);
+    size_t len = strcspn(found, "/");
+    snprintf(dst, 128, "%.*s", (int)len, found);
+  }
+}
+
+static void who(void *ctx, struct identity *id) {
+  struct tls *tls = ctx;
+  id->provided = tls_peer_cert_provided(tls);
+  if(id->provided) {
+    id->hash = (char *)tls_peer_cert_hash(tls);
+    id->subject = (char *)tls_peer_cert_subject(tls);
+    id->notafter = tls_peer_cert_notafter(tls);
+    id->notbefore = tls_peer_cert_notbefore(tls);
+    if(id->subject) {
+      attr(id->subject, "CN", id->cn);
+      attr(id->subject, "UID", id->uid);
+      attr(id->subject, "emailAddress", id->email);
+      attr(id->subject, "O", id->org);
+    }
+  }
+}
+
 int main(int argc, char *argv[]) {
   int c;
   while((c = getopt(argc, argv, "dhsvu:g:a:p:r:c:k:")) != -1) {
@@ -173,7 +211,7 @@ int main(int argc, char *argv[]) {
       if(!inet_ntop(client.ss_family, ptr, ip, INET6_ADDRSTRLEN))
         errx(1, "inet_ntop failed");
 
-      gemini(tls, url, shared);
+      gemini(out, who, tls, url, shared);
       tls_close(tls);
       _exit(0);
     } else {

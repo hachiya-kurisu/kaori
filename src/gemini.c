@@ -13,7 +13,6 @@
 #include <grp.h>
 #include <pwd.h>
 #include <glob.h>
-#include <tls.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
@@ -21,13 +20,14 @@
 #include "gemini.h"
 
 static struct request {
-  struct tls *tls;
+  put out;
+  void *ctx;
   time_t time;
   char *cwd, *path, *query;
-  int certified, expired, ongoing;
-  char *hash;
-  char cn[128], uid[128], email[128], org[128];
+  int ongoing;
 } req;
+
+static struct identity id = {0};
 
 static const char *types[][2] = {
   {".gmi", "text/gemini"},
@@ -89,17 +89,6 @@ static const char *mime(const char *path) {
   return fallback;
 }
 
-void attr(const char *subject, const char *key, char *dst) {
-  char needle[128] = {0};
-  snprintf(needle, 128, "/%s=", key);
-  char *found = strstr(subject, needle);
-  if(found) {
-    found += strlen(needle);
-    size_t len = strcspn(found, "/");
-    snprintf(dst, 128, "%.*s", (int)len, found);
-  }
-}
-
 void encode(char *src, char *dst) {
   unsigned char *s = (unsigned char *) src;
   if(!strlen((char *) s)) {
@@ -159,21 +148,12 @@ static void die(int eval, const char *msg) {
   _exit(eval);
 }
 
-static void deliver(struct tls *tls, char *buf, int len) {
-  while(len > 0) {
-    ssize_t ret = tls_write(tls, buf, len);
-    if(ret == TLS_WANT_POLLIN || ret == TLS_WANT_POLLOUT) continue;
-    if(ret == -1) die(1, "tls_write failed");
-    buf += ret; len -= ret;
-  }
-}
-
 static int header(int status, const char *meta) {
   if(req.ongoing) return 1;
   if(strlen(meta) > 1024) return 1;
   char buf[HEADER];
   int len = snprintf(buf, HEADER, "%d %s\r\n", status, *meta ? meta : "");
-  deliver(req.tls, buf, len);
+  req.out(req.ctx, buf, len);
   req.ongoing = 1;
   return 0;
 }
@@ -182,7 +162,7 @@ static void transfer(int fd) {
   char buf[BUFFER] = {0};
   ssize_t len;
   while((len = read(fd, buf, BUFFER)) > 0)
-    deliver(req.tls, buf, len);
+    req.out(req.ctx, buf, len);
   if(len == -1) die(1, "read failed");
 }
 
@@ -225,7 +205,7 @@ static void entry(char *path) {
 
   char s[PATH_MAX * 5];
   int len = snprintf(s, sizeof(s), "=> %s %s [%s %s]\n", safe, path, type, size);
-  deliver(req.tls, s, len);
+  req.out(req.ctx, s, len);
 }
 
 static int ls(void) {
@@ -237,7 +217,7 @@ static int ls(void) {
   glob_t res;
   if(glob("*", GLOB_MARK, 0, &res)) {
     char *empty = "(*^o^*)\r\n";
-    deliver(req.tls, empty, strlen(empty));
+    req.out(req.ctx, empty, strlen(empty));
     return 0;
   }
   for(size_t i = 0; i < res.gl_pathc; i++) {
@@ -255,10 +235,10 @@ static int cgi(char *path) {
   setenv("SERVER_PORT", "1965", 1);
   setenv("SERVER_SOFTWARE", "槇村香/" VERSION, 1);
   setenv("SERVER_PROTOCOL", "gemini", 1);
-  if(req.certified) {
+  if(id.provided) {
     setenv("AUTH_TYPE", "Certificate", 1);
-    setenv("REMOTE_USER", *req.cn ? req.cn : "", 1);
-    setenv("TLS_CLIENT_HASH", req.hash, 1);
+    setenv("REMOTE_USER", *id.cn ? id.cn : "", 1);
+    setenv("TLS_CLIENT_HASH", id.hash, 1);
   }
 
   int fd[2];
@@ -281,7 +261,7 @@ static int cgi(char *path) {
   char buf[BUFFER] = {0};
   ssize_t len;
   while((len = read(fd[0], buf, BUFFER)) > 0)
-    deliver(req.tls, buf, len);
+    req.out(req.ctx, buf, len);
 
   close(fd[0]);
   kill(pid, SIGKILL);
@@ -291,8 +271,8 @@ static int cgi(char *path) {
 }
 
 static int route(void) {
-  if(!dig(".authorized", 0, req.hash))
-    return header(req.certified ? 61 : 60, "unauthorized");
+  if(!dig(".authorized", 0, id.hash))
+    return header(id.provided ? 61 : 60, "unauthorized");
 
   if(!req.path)  {
     char url[HEADER];
@@ -321,8 +301,9 @@ static int route(void) {
   return S_ISREG(sb.st_mode) ? file(path) : header(51, "not found");
 }
 
-int gemini(struct tls *tls, char *url, int shared) {
-  req.tls = tls;
+int gemini(put out, ask who, void *ctx, char *url, int shared) {
+  req.out = out;
+  req.ctx = ctx;
   req.ongoing = 0;
 
   size_t eof = strspn(url, valid);
@@ -335,24 +316,10 @@ int gemini(struct tls *tls, char *url, int shared) {
   url[strcspn(url, "\r\n")] = 0;
 
   req.time = time(0);
-  if(tls_peer_cert_provided(req.tls)) {
-    req.certified = 1;
-    req.hash = (char *) tls_peer_cert_hash(req.tls);
+  who(req.ctx, &id);
 
-    const char *subject = tls_peer_cert_subject(req.tls);
-    if(subject) {
-      attr(subject, "CN", req.cn);
-      attr(subject, "UID", req.uid);
-      attr(subject, "emailAddress", req.email);
-      attr(subject, "O", req.org);
-    }
-    int first = tls_peer_cert_notbefore(req.tls);
-    int expiry = tls_peer_cert_notafter(req.tls);
-    if(first != -1 && difftime(req.time, first) < 0) req.expired = -1;
-    if(expiry != -1 && difftime(expiry, req.time) < 0) req.expired = 1;
-  }
-  if(req.certified) {
-    syslog(LOG_INFO, "%s {%s CN:%s}", url, req.hash, req.cn);
+  if(id.provided) {
+    syslog(LOG_INFO, "%s {%s CN:%s}", url, id.hash, id.cn);
   } else {
     syslog(LOG_INFO, "%s", url);
   }

@@ -8,6 +8,16 @@
 #define VERSION "unknown"
 #endif
 
-int gemini(struct tls *tls, char *url, int shared);
+struct identity {
+  int provided;
+  char *hash, *subject;
+  int notbefore, notafter;
+  char cn[128], uid[128], email[128], org[128];
+};
+
+typedef void (*put)(void *ctx, char *buf, int len);
+typedef void (*ask)(void *ctx, struct identity *id);
+
+int gemini(put out, ask who, void *ctx, char *url, int shared);
 
 #endif
