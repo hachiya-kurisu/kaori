@@ -1,23 +1,17 @@
 #include <stdio.h>
-#include <string.h>
 #include <stdlib.h>
-#include <ctype.h>
 #include <limits.h>
 #include <syslog.h>
 #include <unistd.h>
 #include <ctype.h>
+#include <err.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <limits.h>
 #include <signal.h>
-#include <syslog.h>
 #include <time.h>
 #include <grp.h>
 #include <pwd.h>
-#include <err.h>
 #include <glob.h>
 #include <tls.h>
 #include <sys/socket.h>
@@ -259,7 +253,7 @@ static int cgi(char *path) {
   setenv("PATH_INFO", req.path ? req.path : "", 1);
   setenv("SCRIPT_NAME", path ? path : "", 1);
   setenv("SERVER_PORT", "1965", 1);
-  setenv("SERVER_SOFTWARE", "槇村香/202012", 1);
+  setenv("SERVER_SOFTWARE", "槇村香/" VERSION, 1);
   setenv("SERVER_PROTOCOL", "gemini", 1);
   if(req.certified) {
     setenv("AUTH_TYPE", "Certificate", 1);
@@ -290,13 +284,9 @@ static int cgi(char *path) {
     deliver(req.tls, buf, len);
 
   close(fd[0]);
-  kill(pid, SIGTERM);
+  kill(pid, SIGKILL);
   int status;
-  if(waitpid(pid, &status, WNOHANG) == 0) {
-    sleep(1);
-    kill(pid, SIGKILL);
-    waitpid(pid, &status, 0);
-  }
+  waitpid(pid, &status, 0);
   return 0;
 }
 
@@ -385,9 +375,9 @@ int gemini(struct tls *tls, char *url, int shared) {
 
   if(!shared && chdir(domain)) return header(51, "not found");
 
-  static char cwd[HEADER] = "";
-  static char path[HEADER] = {0};
-  static char query[HEADER] = {0};
+  char cwd[HEADER] = "";
+  char path[HEADER] = {0};
+  char query[HEADER] = {0};
 
   decode(rawpath, path);
   decode(rawquery, query);

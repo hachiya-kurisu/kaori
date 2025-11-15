@@ -38,16 +38,20 @@ char *key = "kaori.key";
 int debug = 0;
 int shared = 0;
 
-char *flags = "[-dhs] [-u user] [-g group] [-a address] [-p port] [-r root] "
+char *flags = "[-dhsv] [-u user] [-g group] [-a address] [-p port] [-r root] "
               "[-c certificate] [-k private key]";
 
 static void usage(const char *name) {
   fprintf(stderr, "usage: %s %s\n", name, flags);
 }
 
+static void version(const char *name) {
+  fprintf(stdout, "%s %s\n", name, VERSION);
+}
+
 int main(int argc, char *argv[]) {
   int c;
-  while((c = getopt(argc, argv, "dhsu:g:a:p:r:c:k:")) != -1) {
+  while((c = getopt(argc, argv, "dhsvu:g:a:p:r:c:k:")) != -1) {
     switch(c) {
       case 'd': debug = 1; break;
       case 's': shared = 1; break;
@@ -58,6 +62,7 @@ int main(int argc, char *argv[]) {
       case 'r': root = optarg; break;
       case 'c': crt = optarg; break;
       case 'k': key = optarg; break;
+      case 'v': version(argv[0]); exit(0);
       default: usage(argv[0]); exit(c == 'h');
     }
   }
