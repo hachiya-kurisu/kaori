@@ -76,8 +76,6 @@ static void who(void *ctx, struct identity *id) {
   if(id->provided) {
     id->hash = (char *)tls_peer_cert_hash(tls);
     id->subject = (char *)tls_peer_cert_subject(tls);
-    id->notafter = tls_peer_cert_notafter(tls);
-    id->notbefore = tls_peer_cert_notbefore(tls);
     if(id->subject) {
       attr(id->subject, "CN", id->cn);
       attr(id->subject, "UID", id->uid);
@@ -201,17 +199,9 @@ int main(int argc, char *argv[]) {
         tls_close(tls);
         errx(1, "tls_read failed");
       }
-      char ip[INET6_ADDRSTRLEN];
-      void *ptr;
-      if(client.ss_family == AF_INET) {
-        ptr = &((struct sockaddr_in *)&client)->sin_addr;
-      } else {
-        ptr = &((struct sockaddr_in6 *)&client)->sin6_addr;
-      }
-      if(!inet_ntop(client.ss_family, ptr, ip, INET6_ADDRSTRLEN))
-        errx(1, "inet_ntop failed");
 
       gemini(out, who, tls, url, shared);
+
       tls_close(tls);
       _exit(0);
     } else {

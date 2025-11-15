@@ -11,7 +11,6 @@
 struct identity {
   int provided;
   char *hash, *subject;
-  int notbefore, notafter;
   char cn[128], uid[128], email[128], org[128];
 };
 
