@@ -24,16 +24,5 @@ int main(void) {
   decode("hello%20world", decoded);
   checkstr("decode spaces", "hello world", decoded);
 
-  char result[256] = {0};
-
-  attr("/CN=蜂谷/O=teatime/", "CN", result);
-  checkstr("attr CN", "蜂谷", result);
-
-  attr("/CN=蜂谷/O=teatime/", "O", result);
-  checkstr("attr O", "teatime", result);
-
-  attr("/CN=蜂谷", "CN", result);
-  checkstr("no trailing slash", "蜂谷", result);
-
   return 0;
 }

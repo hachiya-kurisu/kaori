@@ -59,7 +59,7 @@ static void out(void *ctx, char *buf, int len) {
   }
 }
 
-void attr(const char *subject, const char *key, char *dst) {
+static void attr(const char *subject, const char *key, char *dst) {
   char needle[128] = {0};
   snprintf(needle, 128, "/%s=", key);
   char *found = strstr(subject, needle);
