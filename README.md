@@ -19,8 +19,6 @@ feel the city's pulse kicking in, then... let's get moving.
 you've got until the song finishes, so no distractions, ok?
 
 ```
-$ make config.h
-$ vim config.h # tweak to your pleasure
 $ make && make install
 $ rcctl enable kaori
 $ rcctl start kaori
@@ -28,8 +26,8 @@ $ rcctl start kaori
 
 ## echo through the city's pulse
 
-* kaori listens on ::1
-* combine with relayd to share with the world
+* kaori listens on [::1]:1965 unless told otherwise
+* bridge the gap to worlds beyond with relayd
 
 ## geminispace
 
