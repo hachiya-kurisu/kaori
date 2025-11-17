@@ -24,5 +24,8 @@ int main(void) {
   decode("hello%20world", decoded);
   checkstr("decode spaces", "hello world", decoded);
 
+  decode("%e8%9c%82", decoded);
+  checkstr("decode kanji", "蜂", decoded);
+
   return 0;
 }
