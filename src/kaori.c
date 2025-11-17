@@ -13,33 +13,31 @@
 #include <time.h>
 #include <tls.h>
 #include <unistd.h>
-#include <arpa/inet.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
-#include <sys/stat.h>
+#include <sys/time.h>
 #include <sys/types.h>
-#include <sys/wait.h>
 
 #include "gemini.h"
 
-const int backlog = 32;
+const int backlog = 128;
 
-char *root = "/var/gemini";
-char *user = "www";
-char *group = "www";
+const char *root = "/var/gemini";
+const char *user = "www";
+const char *group = "www";
 
-char *addr = "::1";
-char *port = "1965";
+const char *addr = "::1";
+const char *port = "1965";
 
-char *crt = "kaori.crt";
-char *key = "kaori.key";
+const char *crt = "kaori.crt";
+const char *key = "kaori.key";
 
 int debug = 0;
 int shared = 0;
 
-char *flags = "[-dhsv] [-u user] [-g group] [-a address] [-p port] [-r root] "
-              "[-c certificate] [-k private key]";
+const char *flags = "[-dhsv] [-u user] [-g group] [-a address] [-p port] "
+                    "[-r root] [-c certificate] [-k private key]";
 
 static void usage(const char *name) {
   fprintf(stderr, "usage: %s %s\n", name, flags);
@@ -49,19 +47,19 @@ static void version(const char *name) {
   fprintf(stdout, "%s %s\n", name, VERSION);
 }
 
-static void out(void *ctx, char *buf, int len) {
+static void out(void *ctx, const char *buf, ssize_t len) {
   struct tls *tls = ctx;
   while(len > 0) {
-    ssize_t ret = tls_write(tls, buf, len);
+    ssize_t ret = tls_write(tls, buf, (size_t)len);
     if(ret == TLS_WANT_POLLIN || ret == TLS_WANT_POLLOUT) continue;
     if(ret == -1) errx(1, "tls_write failed");
     buf += ret; len -= ret;
   }
 }
 
-static void attr(const char *subject, const char *key, char *dst) {
+static void attr(const char *subject, const char *name, char *dst) {
   char needle[128] = {0};
-  snprintf(needle, 128, "/%s=", key);
+  snprintf(needle, 128, "/%s=", name);
   char *found = strstr(subject, needle);
   if(found) {
     found += strlen(needle);
@@ -124,7 +122,7 @@ int main(int argc, char *argv[]) {
     errx(1, "tls_configure failed");
 
   struct addrinfo hints, *res;
-  bzero(&hints, sizeof(hints));
+  memset(&hints, 0, sizeof(hints));
   hints.ai_family = AF_UNSPEC;
   hints.ai_socktype = SOCK_STREAM;
   hints.ai_flags = AI_PASSIVE;
@@ -154,8 +152,8 @@ int main(int argc, char *argv[]) {
 
   freeaddrinfo(res);
 
-  struct group *grp = {0};
-  struct passwd *pwd = {0};
+  const struct group *grp = {0};
+  const struct passwd *pwd = {0};
 
   if(group && !(grp = getgrnam(group)))
     errx(1, "group %s not found", group);
