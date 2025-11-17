@@ -1,19 +1,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <limits.h>
+#include <strings.h>
 #include <syslog.h>
 #include <unistd.h>
 #include <ctype.h>
-#include <err.h>
-#include <errno.h>
 #include <fcntl.h>
 #include <string.h>
 #include <signal.h>
 #include <time.h>
-#include <grp.h>
-#include <pwd.h>
 #include <glob.h>
-#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 
@@ -77,7 +73,7 @@ static const char *mime(const char *path) {
   snprintf(override, PATH_MAX, ".%s.mime", path);
   if(dig(override, type, 0) != -1) return type;
 
-  char *ext = strchr(path, '.');
+  const char *ext = strchr(path, '.');
   if(!ext)
     return fallback;
 
@@ -89,7 +85,7 @@ static const char *mime(const char *path) {
   return fallback;
 }
 
-void encode(char *src, char *dst) {
+static void encode(const char *src, char *dst) {
   unsigned char *s = (unsigned char *) src;
   if(!strlen((char *) s)) {
     dst[0] = '\0';
@@ -97,9 +93,8 @@ void encode(char *src, char *dst) {
   }
   static char skip[256] = {0};
   if(!skip[(int) '-']) {
-    unsigned int i;
-    for(i = 0; i < 256; i++)
-      skip[i] = strchr(valid, i) ? i : 0;
+    for(int i = 0; i < 256; i++)
+      skip[i] = strchr(valid, i) ? (char)i : 0;
   }
   for(; *s; s++) {
     if(skip[(int) *s]) snprintf(dst, 2, "%c", skip[(int) *s]), ++dst;
@@ -115,7 +110,7 @@ void encode(char *src, char *dst) {
   *dst = '\0';
 }
 
-int decode(const char *src, char *dst) {
+static int decode(const char *src, char *dst) {
   int pos = 0;
   char buf[3] = {0};
   unsigned int decoded;
@@ -124,7 +119,7 @@ int decode(const char *src, char *dst) {
     if(pos == 2) {
       if(buf[0] == '%' && isxdigit(buf[1]) && isxdigit(buf[2])) {
         sscanf(buf, "%%%2x", &decoded);
-        *dst++ = decoded;
+        *dst++ = (char)decoded;
         memset(buf, 0, 3);
         pos = 0;
       } else {
@@ -166,7 +161,7 @@ static void transfer(int fd) {
   if(len == -1) die(1, "read failed");
 }
 
-static int file(char *path) {
+static int file(const char *path) {
   int fd = open(path, O_RDONLY);
   if(fd == -1) return header(51, "not found");
   const char *type = mime(path);
@@ -201,7 +196,7 @@ static void entry(char *path) {
   }
 
   char size[64];
-  humansize(sb.st_size, size, sizeof(size));
+  humansize((double)sb.st_size, size, sizeof(size));
 
   char s[PATH_MAX * 5];
   int len = snprintf(s, sizeof(s), "=> %s %s [%s %s]\n", safe, path, type, size);
@@ -216,8 +211,8 @@ static int ls(void) {
   header(20, "text/gemini");
   glob_t res;
   if(glob("*", GLOB_MARK, 0, &res)) {
-    char *empty = "(*^o^*)\r\n";
-    req.out(req.ctx, empty, strlen(empty));
+    const char *empty = "(*^o^*)\r\n";
+    req.out(req.ctx, empty, (ssize_t)strlen(empty));
     return 0;
   }
   for(size_t i = 0; i < res.gl_pathc; i++) {
@@ -338,7 +333,6 @@ int gemini(put out, ask who, void *ctx, char *url, int shared) {
 
   char *port = 0;
   if(domain && (port = strchr(domain, ':'))) *port++ = '\0';
-  if(port && strcmp(port, "1965")) return header(53, "refused");
 
   if(!shared && chdir(domain)) return header(51, "not found");
 
