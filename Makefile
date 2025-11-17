@@ -7,6 +7,13 @@ CFLAGS += -DVERSION=\"${VERSION}\"
 CFLAGS += -DNAME=\"kaori\"
 CFLAGS += -Wall -Wextra -std=c99 -pedantic -Wformat=2
 CFLAGS += -fstack-protector-strong -D_FORTIFY_SOURCE=2
+CFLAGS += -Wshadow -Wcast-align -Wstrict-prototypes
+CFLAGS += -Wwrite-strings -Wconversion -Wformat-security
+CFLAGS += -Wmissing-prototypes -Wold-style-definition
+
+LINTFLAGS += --enable=all --inconclusive --language=c --library=posix
+LINTFLAGS += --quiet --suppress=missingIncludeSystem
+LINTFLAGS += --suppress=getpwnamCalled --suppress=getgrnamCalled
 
 PREFIX ?= /usr/local
 
@@ -25,8 +32,12 @@ install:
 	install -m 755 kaori ${DESTDIR}${PREFIX}/bin/kaori
 	install -m 555 kaori.rc ${DESTDIR}/etc/rc.d/kaori
 
+uninstall:
+	rm -f ${DESTDIR}${PREFIX}/bin/kaori
+	rm -f ${DESTDIR}/etc/rc.d/kaori
+
 lint:
-	cppcheck --enable=all --suppress=missingIncludeSystem src/*.c
+	cppcheck ${LINTFLAGS} src/*.c
 
 README.md: README.gmi
 	sisyphus -f markdown <README.gmi >README.md
@@ -48,7 +59,7 @@ push: test
 	git push github
 
 clean:
-	rm -f kaori test
+	rm -f kaori
 
 again: clean all
 
