@@ -169,7 +169,7 @@ int main(int argc, char *argv[]) {
   if(user && setuid(pwd->pw_uid)) errx(1, "setuid failed");
 
 #ifdef __OpenBSD__
-  if(!debug) daemon(0, 0);
+  if(!debug) daemon(1, 0);
   if(unveil(root, "rwxc")) errx(1, "unveil failed");
   if(pledge("stdio inet proc dns exec rpath wpath cpath getpw unix flock", 0))
     errx(1, "pledge failed");
