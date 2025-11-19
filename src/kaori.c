@@ -30,8 +30,8 @@ const char *group = "www";
 const char *addr = "::1";
 const char *port = "1965";
 
-const char *crt = "kaori.crt";
-const char *key = "kaori.key";
+const char *crt = "/etc/ssl/gemini.crt";
+const char *key = "/etc/ssl/private/gemini.key";
 
 int debug = 0;
 int shared = 0;
