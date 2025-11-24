@@ -1,5 +1,6 @@
 VERSION = 0.5
 OS != uname -s
+KEY ?= ~/.signify/blekksprut-pkg.sec
 
 -include Makefile.$(OS)
 
@@ -16,25 +17,46 @@ LINTFLAGS += --quiet --suppress=missingIncludeSystem
 LINTFLAGS += --suppress=getpwnamCalled --suppress=getgrnamCalled
 
 PREFIX ?= /usr/local
+MANDIR ?= /usr/local/man
 
 LIBS += -ltls -lssl -lcrypto -lz
 
-.PHONY: all install lint doc push clean again release
+.PHONY: all install lint doc push clean again release sign pkg
 
 all: kaori
 
-kaori: src/gemini.c src/kaori.c
+kaori: src/gemini.c src/kaori.c Makefile
 	${CC} ${CFLAGS} ${LDFLAGS} -o $@ src/gemini.c src/kaori.c ${LIBS}
+	strip $@
 
 install:
 	install -d ${DESTDIR}${PREFIX}/bin
 	install -d ${DESTDIR}/etc/rc.d
+	install -d ${DESTDIR}${MANDIR}/man8
+	install -m 644 kaori.8 ${DESTDIR}${MANDIR}/man8/kaori.8
 	install -m 755 kaori ${DESTDIR}${PREFIX}/bin/kaori
 	install -m 555 kaori.rc ${DESTDIR}/etc/rc.d/kaori
 
 uninstall:
 	rm -f ${DESTDIR}${PREFIX}/bin/kaori
+	rm -f ${DESTDIR}${MANDIR}/man8/kaori.8
 	rm -f ${DESTDIR}/etc/rc.d/kaori
+
+pkg: kaori
+	@[ `uname` = OpenBSD ] || { echo "requires openbsd"; exit 1; }
+	rm -rf /tmp/pkg
+	make install DESTDIR=/tmp/pkg PREFIX=/usr/local
+	pkg_create \
+		-D COMMENT="a neon-drenched gemini server" \
+		-D MAINTAINER="kurisu@blekksprut.net" \
+		-D HOMEPAGE="https://blekksprut.net/kaori" \
+		-D FULLPKGPATH=net/kaori \
+		-D FULLPKGNAME=kaori-${VERSION} \
+		-d pkg/DESCR \
+		-f pkg/PLIST \
+		-B /tmp/pkg \
+		-p /usr/local \
+		kaori-${VERSION}.tgz
 
 lint:
 	cppcheck ${LINTFLAGS} src/*.c
@@ -60,8 +82,18 @@ push: test
 
 clean:
 	rm -f kaori
+	rm -rf signed/
 
 again: clean all
 
-release: push
+sign: pkg
+	mkdir -p signed/
+	pkg_sign -s signify2 -s ${KEY} -o signed/ kaori-${VERSION}.tgz
+
+release:
+	if [ `uname` = OpenBSD ]; then \
+		$(MAKE) sign && \
+		mkdir -p /var/www/blekksprut.net/pkg && \
+		cp signed/kaori-${VERSION}.tgz /var/www/blekksprut.net/pkg/; \
+	fi
 	git push github --tags

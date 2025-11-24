@@ -1,0 +1,6 @@
+bin/kaori
+man/man8/miki.8
+@exec makewhatis /usr/local/man
+@unexec makewhatis /usr/local/man
+@cwd /
+etc/rc.d/kaori

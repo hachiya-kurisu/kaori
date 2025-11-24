@@ -1,0 +1,65 @@
+.Dd $Mdocdate$
+.Dt KAORI 8
+.Os
+.Sh NAME
+.Nm kaori
+.Nd a neon-drenched gemini server
+.Sh SYNOPSIS
+.Nm kaori
+.Op Fl ds
+.Op Fl a Ar address
+.Op Fl c Ar certificate
+.Op Fl g Ar group
+.Op Fl k Ar key
+.Op Fl p Ar port
+.Op Fl r Ar root
+.Op Fl u Ar user
+.Sh DESCRIPTION
+stumbling through the alleys
+are you moving away from something or towards something?
+away from someone? towards someone?
+the streetlight above you flickers for a moment
+everything goes dark
+.Pp
+the options are as follows:
+.Bl -tag -width Ds
+.It Fl a Ar address
+defaults to
+.Dq ::1
+.It Fl c Ar certificate
+defaults to
+.Pa /etc/ssl/gemini.crt
+.It Fl d
+don't daemonize
+.It Fl g Ar group
+become
+.Ar group
+- defaults to
+.Dq www
+.It Fl k Ar key
+defaults to
+.Pa /etc/ssl/private/gemini.key
+.It Fl p Ar port
+defaults to 1965
+.It Fl r Ar root
+defaults to
+.Pa /var/gemini
+.It Fl s
+shared mode - use the same root for all domains
+.It Fl u Ar user
+become
+.Ar user
+- defaults to
+.Dq www
+.El
+.Sh FILES
+.Bl -tag -width "/var/gemini" -compact
+.It Pa /var/gemini
+default root directory
+.El
+.Sh EXIT STATUS
+the
+.Nm
+utility exits 0 on success, >0 on error
+.Sh AUTHORS
+named after makimura kaori from city hunter
