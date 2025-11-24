@@ -29,7 +29,7 @@ kaori: src/gemini.c src/kaori.c Makefile
 	${CC} ${CFLAGS} ${LDFLAGS} -o $@ src/gemini.c src/kaori.c ${LIBS}
 	strip $@
 
-install:
+install: kaori
 	install -d ${DESTDIR}${PREFIX}/bin
 	install -d ${DESTDIR}/etc/rc.d
 	install -d ${DESTDIR}${MANDIR}/man8
