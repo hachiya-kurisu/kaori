@@ -1,4 +1,4 @@
-VERSION = 0.5
+VERSION = 0.6
 OS != uname -s
 KEY ?= ~/.signify/blekksprut-pkg.sec
 
